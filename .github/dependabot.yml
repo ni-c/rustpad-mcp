@@ -19,6 +19,12 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # typescript-eslint pins typescript ">=4.8.4 <6.1.0"; a TypeScript major
+      # PR can never go green until upstream widens the range.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
 
   # Exists so the digest-pinned base image gets refreshed at all. Node majors are
   # excluded because Dependabot offers whatever tag is newest, while the runtime
