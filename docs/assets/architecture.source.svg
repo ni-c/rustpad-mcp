@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SOURCE FILE — the one place the architecture diagram is edited.
+
+  `npm run assets` turns this into four rendered copies, which are the files that
+  actually get shown:
+
+    docs/public/architecture-light.svg   GitHub in its light theme
+    docs/public/architecture-dark.svg    GitHub in its dark theme
+    docs/public/architecture.svg         npm, and anything that strips <picture>
+    docs/index.md                        inline, follows the VitePress theme toggle
+
+  Geometry and labels only: no colours, no <style>. Everything is expressed through
+  the class contract that docs/.vitepress/theme/custom.css defines — .node,
+  .node-accent, .edge, .edge-accent, .edge-dashed, .label-title, .label-mono,
+  .label-muted — and the generator supplies a matching palette per output. The
+  generator refuses a source that carries its own fill/stroke or a <style> block.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 268" role="img" aria-labelledby="arch-title arch-desc">
+  <title id="arch-title">rustpad-mcp architecture</title>
+  <desc id="arch-desc">An MCP client talks to rustpad-mcp over stdio; rustpad-mcp reads pads over HTTPS and writes them over the WebSocket operational-transformation protocol, so its edits merge with what humans type in the browser at the same time.</desc>
+
+  <defs>
+    <marker id="arch-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 z" />
+    </marker>
+    <marker id="arch-arrow-accent" class="accent" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 z" />
+    </marker>
+  </defs>
+
+  <rect class="node" x="20" y="70" width="160" height="80" rx="10" />
+  <text class="label-title" x="100" y="103" text-anchor="middle">MCP client</text>
+  <text class="label-muted" x="100" y="123" text-anchor="middle">Claude, Codex, …</text>
+
+  <rect class="node-accent" x="280" y="55" width="170" height="110" rx="10" />
+  <text class="label-title" x="365" y="87" text-anchor="middle">rustpad-mcp</text>
+  <text class="label-muted" x="365" y="107" text-anchor="middle">8 tools</text>
+  <text class="label-muted" x="365" y="125" text-anchor="middle">confirm tokens</text>
+  <text class="label-muted" x="365" y="143" text-anchor="middle">read-only mode</text>
+
+  <rect class="node" x="550" y="70" width="150" height="80" rx="10" />
+  <text class="label-title" x="625" y="103" text-anchor="middle">Rustpad</text>
+  <text class="label-muted" x="625" y="123" text-anchor="middle">collaborative pads</text>
+
+  <path class="edge-accent" d="M180,110 L272,110" marker-end="url(#arch-arrow-accent)" />
+  <text class="label-mono" x="226" y="98" text-anchor="middle">stdio</text>
+
+  <path class="edge-accent" d="M450,95 L542,95" marker-end="url(#arch-arrow-accent)" />
+  <text class="label-mono" x="496" y="83" text-anchor="middle">HTTPS</text>
+
+  <path class="edge-accent" d="M450,130 L542,130" marker-end="url(#arch-arrow-accent)" />
+  <text class="label-mono" x="496" y="152" text-anchor="middle">WebSocket · OT</text>
+
+  <path class="edge edge-dashed" d="M625,150 L625,196" marker-end="url(#arch-arrow)" />
+  <text class="label-muted" x="625" y="216" text-anchor="middle">humans edit the same pads live —</text>
+  <text class="label-muted" x="625" y="232" text-anchor="middle">the server transforms concurrent edits</text>
+</svg>

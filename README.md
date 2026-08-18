@@ -1,7 +1,16 @@
 # rustpad-mcp
 
-MCP server for [Rustpad](https://github.com/ekzhang/rustpad), the efficient,
-minimal, self-hosted collaborative text editor.
+[![CI](https://img.shields.io/github/actions/workflow/status/ni-c/rustpad-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/rustpad-mcp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
+[![downloads](https://img.shields.io/npm/dm/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
+[![container](https://img.shields.io/badge/ghcr.io-rustpad--mcp-blue?logo=docker&logoColor=white)](https://github.com/ni-c/rustpad-mcp/pkgs/container/rustpad-mcp)
+[![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](https://nodejs.org)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![docs](https://img.shields.io/badge/docs-rustpad--mcp.ni--c.de-4f46e5)](https://rustpad-mcp.ni-c.de)
+
+A [Model Context Protocol](https://modelcontextprotocol.io) server for
+[Rustpad](https://github.com/ekzhang/rustpad), the efficient, minimal,
+self-hosted collaborative text editor.
 
 It gives an AI assistant read and write access to the pads of a Rustpad
 instance. Reads go through Rustpad's HTTP API; writes speak the
@@ -10,6 +19,16 @@ operational-transformation WebSocket protocol, so targeted edits
 collaborators type at the same time instead of overwriting it. While the
 server edits a pad, it is visible to everyone in the pad as a collaborator
 named `rustpad-mcp`.
+
+📖 **[Full documentation at rustpad-mcp.ni-c.de](https://rustpad-mcp.ni-c.de)**
+
+![Demo of rustpad-mcp over the MCP inspector](https://rustpad-mcp.ni-c.de/demo.gif)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://rustpad-mcp.ni-c.de/architecture-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="https://rustpad-mcp.ni-c.de/architecture-light.svg" />
+  <img alt="Architecture: an MCP client talks to rustpad-mcp over stdio; rustpad-mcp reads pads over HTTPS and writes them over the WebSocket OT protocol" src="https://rustpad-mcp.ni-c.de/architecture.svg" />
+</picture>
 
 ## Requirements
 
@@ -59,6 +78,19 @@ claude mcp add rustpad --env RUSTPAD_URL=https://rustpad.example.net -- npx rust
 }
 ```
 
+### Codex
+
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.rustpad]
+command = "npx"
+args = ["-y", "rustpad-mcp"]
+
+[mcp_servers.rustpad.env]
+RUSTPAD_URL = "https://rustpad.example.net"
+```
+
 ### Docker
 
 ```sh
@@ -101,7 +133,24 @@ npm run lint && npm run build && npm test
 
 The test suite talks to an in-memory fake of rustpad-server (including OT
 transformation of concurrent edits) over the real MCP protocol; no live
-instance is needed.
+instance is needed. The architecture diagram and social card are generated —
+edit `docs/assets/architecture.source.svg` and run `npm run assets`, never the
+rendered copies.
+
+## Releasing
+
+Releases are tag-driven. Bump `package.json`, move the `[Unreleased]` notes in
+`CHANGELOG.md` under the new version, commit, then:
+
+```sh
+git tag -s vX.Y.Z -m "vX.Y.Z"
+git push origin main vX.Y.Z
+```
+
+The release workflow publishes to npm via Trusted Publishing (OIDC, with
+provenance), pushes the multi-arch container image to GHCR, creates the GitHub
+release from the CHANGELOG section, and updates the entry in the official MCP
+registry.
 
 ## License
 
