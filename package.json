@@ -1,6 +1,6 @@
 {
   "name": "rustpad-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "mcpName": "io.github.ni-c/rustpad-mcp",
   "description": "MCP server for Rustpad, the self-hosted collaborative text editor",
   "keywords": [

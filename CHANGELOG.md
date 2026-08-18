@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-19
+
+### Changed
+
+- First release published through the tag-driven pipeline (npm Trusted
+  Publishing with provenance, GHCR multi-arch image, MCP registry entry).
+  Functionally identical to 0.1.0.
+
 ## [0.1.0] - 2026-08-19
 
 ### Added
