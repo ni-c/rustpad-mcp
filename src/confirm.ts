@@ -23,6 +23,12 @@ export class ConfirmationStore {
 
   /** Creates (or replaces) the pending token for `resource`. */
   issue(resource: string): string {
+    // Sweep expired entries first, so eviction below removes a live token
+    // only when there really are MAX_PENDING live ones.
+    const now = Date.now();
+    for (const [key, entry] of this.pending) {
+      if (now >= entry.expiresAt) this.pending.delete(key);
+    }
     if (this.pending.size >= MAX_PENDING) {
       const oldest = this.pending.keys().next();
       if (!oldest.done) this.pending.delete(oldest.value);

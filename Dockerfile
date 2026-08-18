@@ -14,8 +14,9 @@ ENV NODE_ENV=production
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-# The server reports its version from package.json at runtime.
-COPY package.json package-lock.json ./
+# The server reports its version from package.json at runtime; the lockfile is
+# not read and stays out of the shipped layer.
+COPY package.json ./
 
 # The npm bundled with the base image is its main CVE source and a stdio
 # server never needs it at runtime.

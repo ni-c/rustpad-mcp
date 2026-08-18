@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -18,6 +18,7 @@ import {
   documentIdParam,
   documentTextParam,
   languageParam,
+  wellFormed,
 } from '../schema.js';
 import { withSession, type WebSocketFactory } from '../session.js';
 import { EPHEMERAL_NOTE, shareUrl } from './read.js';
@@ -124,7 +125,13 @@ export function registerWriteTools(
           }
           const oldLength = codepointLength(oldText);
           if (oldLength > 0) {
-            const key = `set_document:${id}`;
+            // The token is bound to the replacement text as well as the pad:
+            // a confirmation obtained for one text must not execute another.
+            const fingerprint = createHash('sha256')
+              .update(text)
+              .digest('hex')
+              .slice(0, 16);
+            const key = `set_document:${id}:${fingerprint}`;
             if (!confirmations.consume(key, confirm_token)) {
               return textResult(
                 confirmationPrompt(
@@ -184,15 +191,15 @@ export function registerWriteTools(
         'replace_all to change every occurrence.',
       inputSchema: {
         id: documentIdParam,
-        search: z
-          .string()
-          .min(1)
-          .max(256 * 1024)
-          .describe('Exact string to find (no regex)'),
-        replace: z
-          .string()
-          .max(256 * 1024)
-          .describe('Replacement; may be empty to delete the match'),
+        search: wellFormed(
+          z
+            .string()
+            .min(1)
+            .max(256 * 1024)
+        ).describe('Exact string to find (no regex)'),
+        replace: wellFormed(z.string().max(256 * 1024)).describe(
+          'Replacement; may be empty to delete the match'
+        ),
         replace_all: z
           .boolean()
           .optional()
@@ -200,7 +207,11 @@ export function registerWriteTools(
             'Replace every occurrence instead of requiring a unique match'
           ),
       },
-      annotations: { readOnlyHint: false, openWorldHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+      },
     },
     async ({ id, search, replace, replace_all }) =>
       run(async () => {

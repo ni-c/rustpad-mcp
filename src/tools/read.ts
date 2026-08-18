@@ -62,14 +62,14 @@ export function registerReadTools(
         assertDocumentId(id);
         return withSession(config, id, webSocketFactory, async (session) => {
           const { state } = session;
-          return jsonResult({
+          // Through untrustedResult, not jsonResult: `language` and the user
+          // names are free text chosen by arbitrary clients of the instance.
+          return untrustedResult({
             id,
             url: shareUrl(config, id),
             length_characters: codepointLength(state.text),
             revision: state.revision,
             language: state.language ?? 'plaintext (default)',
-            // Names come from other clients of the instance and are untrusted;
-            // they are labelled as data, not quoted into any instruction text.
             active_users: [...state.users.values()].map((user) => user.name),
             note: EPHEMERAL_NOTE,
           });

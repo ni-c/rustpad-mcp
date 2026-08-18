@@ -146,5 +146,9 @@ export function searchReplaceOps(
     codepointLength(text) +
       positions.length * (codepointLength(replace) - searchCp)
   );
+  // Invariant check before anything is sent: a match that splits a surrogate
+  // pair (or any future indexing bug) would produce an operation the server
+  // rejects by dropping the connection — fail here with a real error instead.
+  applyOperation(text, ops);
   return { ops, count: positions.length };
 }

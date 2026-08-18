@@ -17,14 +17,25 @@ export const documentIdParam = z
   .describe('Id of the pad, the part after # in its URL');
 
 /**
+ * Rejects lone surrogates: they cannot be encoded as valid UTF-8, so the Rust
+ * server drops the connection instead of answering — and inside a search
+ * string they would corrupt the code-point arithmetic in ot.ts.
+ */
+export function wellFormed<T extends z.ZodString>(schema: T) {
+  return schema.refine(
+    (value) => value.isWellFormed(),
+    'text must not contain unpaired surrogate characters'
+  );
+}
+
+/**
  * Zod's max() counts UTF-16 units while Rustpad's 256 KiB limit counts code
  * points; the code-point check in ot.ts is authoritative, this bound just
  * rejects the absurd early.
  */
-export const documentTextParam = z
-  .string()
-  .max(256 * 1024)
-  .describe('Plain text content (up to 256 KiB, the Rustpad document limit)');
+export const documentTextParam = wellFormed(
+  z.string().max(256 * 1024)
+).describe('Plain text content (up to 256 KiB, the Rustpad document limit)');
 
 export const languageParam = z
   .string()

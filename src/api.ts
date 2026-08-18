@@ -164,11 +164,24 @@ export class RustpadApi {
 
   async stats(): Promise<RustpadStats> {
     const body = await this.request('/api/stats');
+    let parsed: unknown;
     try {
-      return JSON.parse(body) as RustpadStats;
+      parsed = JSON.parse(body);
     } catch {
       throw new Error('Rustpad /api/stats did not return valid JSON');
     }
+    // Picked field by field: the response is upstream-controlled, and spreading
+    // it through would hand any extra key straight to the model.
+    const record = parsed as Record<string, unknown>;
+    const { start_time, num_documents, database_size } = record ?? {};
+    if (
+      typeof start_time !== 'number' ||
+      typeof num_documents !== 'number' ||
+      typeof database_size !== 'number'
+    ) {
+      throw new Error('Rustpad /api/stats returned an unexpected shape');
+    }
+    return { start_time, num_documents, database_size };
   }
 }
 
