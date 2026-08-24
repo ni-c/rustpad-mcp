@@ -20,6 +20,7 @@
     "url": "https://github.com/ni-c/rustpad-mcp/issues"
   },
   "homepage": "https://github.com/ni-c/rustpad-mcp#readme",
+  "funding": "https://github.com/sponsors/ni-c",
   "type": "module",
   "bin": {
     "rustpad-mcp": "dist/index.js"
