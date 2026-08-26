@@ -1,27 +1,27 @@
 # rustpad-mcp
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/rustpad-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/rustpad-mcp/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
-[![downloads](https://img.shields.io/npm/dm/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
-[![container](https://img.shields.io/badge/ghcr.io-rustpad--mcp-blue?logo=docker&logoColor=white)](https://github.com/ni-c/rustpad-mcp/pkgs/container/rustpad-mcp)
-[![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](https://nodejs.org)
-[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![docs](https://img.shields.io/badge/docs-rustpad--mcp.ni--c.de-4f46e5)](https://rustpad-mcp.ni-c.de)
+[![npm version](https://img.shields.io/npm/v/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
+[![node](https://img.shields.io/node/v/rustpad-mcp)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/rustpad-mcp)](LICENSE)
+[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Frustpad--mcp-blue)](https://github.com/ni-c/rustpad-mcp/pkgs/container/rustpad-mcp)
+[![docs](https://img.shields.io/badge/docs-rustpad--mcp.ni--c.de-informational)](https://rustpad-mcp.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for
+A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
 [Rustpad](https://github.com/ekzhang/rustpad), the efficient, minimal,
 self-hosted collaborative text editor.
 
-It gives an AI assistant read and write access to the pads of a Rustpad
-instance. Reads go through Rustpad's HTTP API; writes speak the
-operational-transformation WebSocket protocol, so targeted edits
-(`append_to_document`, `replace_in_document`) merge cleanly with what human
-collaborators type at the same time instead of overwriting it. While the
-server edits a pad, it is visible to everyone in the pad as a collaborator
-named `rustpad-mcp`.
+Lets MCP clients like Claude Code, Claude Desktop or Codex read and write the pads of
+a Rustpad instance: fetch a document, create one, replace it wholesale or edit it in
+place.
 
-📖 **[Full documentation at rustpad-mcp.ni-c.de](https://rustpad-mcp.ni-c.de)**
+Reads go through Rustpad's HTTP API; writes speak the operational-transformation
+WebSocket protocol, so targeted edits (`append_to_document`, `replace_in_document`)
+merge cleanly with what human collaborators type at the same time instead of
+overwriting it. While the server edits a pad, it is visible to everyone in the pad as
+a collaborator named `rustpad-mcp`.
 
 ![Demo of rustpad-mcp over the MCP inspector](https://rustpad-mcp.ni-c.de/demo.gif)
 
