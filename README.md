@@ -17,6 +17,11 @@ Lets MCP clients like Claude Code, Claude Desktop or Codex read and write the pa
 a Rustpad instance: fetch a document, create one, replace it wholesale or edit it in
 place.
 
+Eight tools is the ceiling, not the floor: `RUSTPAD_ALLOW_TOOLS=essential`
+registers a curated five instead, and a model picks the right tool far more
+reliably from five than from eight — see
+[choosing which tools load](#choosing-which-tools-load).
+
 Reads go through Rustpad's HTTP API; writes speak the operational-transformation
 WebSocket protocol, so targeted edits (`append_to_document`, `replace_in_document`)
 merge cleanly with what human collaborators type at the same time instead of
@@ -39,11 +44,13 @@ a collaborator named `rustpad-mcp`.
 
 ## Configuration
 
-| Variable               | Required | Description                                                              |
-| ---------------------- | -------- | ------------------------------------------------------------------------ |
-| `RUSTPAD_URL`          | yes      | Base URL of the instance, e.g. `https://rustpad.example.net`             |
-| `RUSTPAD_READ_ONLY`    | no       | `true` registers only the read tools                                     |
-| `RUSTPAD_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection only) |
+| Variable               | Required | Description                                                                        |
+| ---------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `RUSTPAD_URL`          | yes      | Base URL of the instance, e.g. `https://rustpad.example.net`                       |
+| `RUSTPAD_READ_ONLY`    | no       | `true` registers only the read tools                                               |
+| `RUSTPAD_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection only)           |
+| `RUSTPAD_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset |
+| `RUSTPAD_DENY_TOOLS`   | no       | Same syntax; removed from whatever `RUSTPAD_ALLOW_TOOLS` left                      |
 
 The same URL serves the HTTP API, the WebSocket endpoint and the share links
 returned by the tools (`<RUSTPAD_URL>/#<pad-id>`). Booleans must be exactly
@@ -54,6 +61,28 @@ Keep in mind what Rustpad is: **pads are ephemeral** (lost on server restart
 and after 24 hours of inactivity, unless the instance is run with
 `SQLITE_URI`) and **anyone who knows a pad id can read and write it**. Do not
 put secrets in pads.
+
+### Choosing which tools load
+
+`RUSTPAD_ALLOW_TOOLS` and `RUSTPAD_DENY_TOOLS` take comma-separated tool names;
+a trailing `*` matches a whole family. `essential` is a curated preset of
+five: `get_document`, `get_document_info`, `create_document`, `set_document`, `append_to_document`.
+
+```sh
+RUSTPAD_ALLOW_TOOLS=essential
+RUSTPAD_ALLOW_TOOLS=get_document,append_to_document
+RUSTPAD_DENY_TOOLS=set_document
+```
+
+An entry that matches no tool aborts startup and names it, so a typo cannot
+silently hide a tool — an absent tool is not something anyone traces back to an
+environment variable. A filtered tool is never registered, so it is absent from
+`tools/list` and unknown to `tools/call` alike, exactly like a write tool under
+`RUSTPAD_READ_ONLY`.
+
+If you run several of these servers at once, [mcp-hub](https://mcp-hub.ni-c.de)
+is the other answer — its `/hub` endpoint replaces every server's tools with six
+meta-tools.
 
 ## Installation
 

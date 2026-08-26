@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `RUSTPAD_ALLOW_TOOLS` and `RUSTPAD_DENY_TOOLS` choose which of the 8
+  tools are registered. Both take comma-separated tool names or a prefix with a
+  trailing `*`, the allow list decides what is in and the deny list is subtracted
+  from it, and `RUSTPAD_ALLOW_TOOLS=essential` selects a curated five —
+  `get_document`, `get_document_info`, `create_document`, `set_document`, `append_to_document`. A model picks the right tool far more reliably from five than
+  from eight, and every visible tool costs context on every request. Nothing
+  changes for an installation that sets neither.
+
+  A filtered tool is not registered at all, so it is absent from `tools/list`
+  and answers `tools/call` with "tool not found" — the same cut
+  `RUSTPAD_READ_ONLY` already makes, not a second, weaker one.
+
+  An entry that matches no tool **stops the server at startup**, naming the
+  entry and listing the real names, rather than being ignored: an ignored typo
+  leaves a tool missing from `tools/list` with nothing pointing at the cause.
+
 ### Fixed
 
 - The container image no longer ships OpenSSL 3.5.7-r0, which carries

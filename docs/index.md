@@ -19,6 +19,8 @@ features:
     details: append_to_document and replace_in_document retain everything they do not touch, and the Rustpad server transforms concurrent edits — a human typing in the same pad at the same moment loses nothing. The model shows up in the pad as a named collaborator.
   - title: Built for an unauthenticated world
     details: Rustpad has no accounts, so every pad is untrusted by definition. All content that comes out of a pad — reads, metadata, even upstream error bodies — is explicitly marked as data, never instructions, before a model sees it.
+  - title: Eight tools, or three
+    details: 'RUSTPAD_READ_ONLY=true registers the read tools and nothing else. RUSTPAD_ALLOW_TOOLS cuts finer — essential for a curated five, your own comma-separated list, or a whole family with list_* — and RUSTPAD_DENY_TOOLS subtracts. Whatever is filtered out does not exist on the protocol rather than failing when called, and a name that matches no tool stops the server at startup instead of quietly going missing.'
   - title: Safe by default
     details: Replacing a non-empty pad needs a single-use server-issued confirmation token bound to the pad and the exact replacement text; read-only mode simply does not register the write tools; every session buffer and wait is hard-capped against a hostile upstream.
 ---

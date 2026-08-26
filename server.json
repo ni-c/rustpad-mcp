@@ -35,6 +35,18 @@
           "description": "Exactly 'true' accepts a self-signed certificate, scoped to this connection",
           "isRequired": false,
           "format": "string"
+        },
+        {
+          "name": "RUSTPAD_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "RUSTPAD_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever RUSTPAD_ALLOW_TOOLS left",
+          "isRequired": false,
+          "format": "string"
         }
       ]
     },
@@ -60,6 +72,18 @@
         {
           "name": "RUSTPAD_INSECURE_TLS",
           "description": "Exactly 'true' accepts a self-signed certificate, scoped to this connection",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "RUSTPAD_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "RUSTPAD_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever RUSTPAD_ALLOW_TOOLS left",
           "isRequired": false,
           "format": "string"
         }
