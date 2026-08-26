@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { RustpadApi } from './api.js';
+import { buildToolFilter, installToolFilter } from './tool-filter.js';
 import { ConfirmationStore } from './confirm.js';
 import type { Config } from './config.js';
 import type { WebSocketFactory } from './session.js';
@@ -27,6 +28,10 @@ export function createServer(
   config: Config,
   options: ServerOptions = {}
 ): McpServer {
+  // Before anything is built: an unusable tool list should fail on the
+  // way in, not leave a server running with tools quietly missing.
+  const filter = buildToolFilter(config);
+
   const api = new RustpadApi(config);
   const confirmations = new ConfirmationStore();
 
@@ -34,6 +39,10 @@ export function createServer(
     name: 'rustpad-mcp',
     version: packageVersion(),
   });
+
+  // Wraps server.registerTool, so it has to sit before the first
+  // register call and does not care how they are organised.
+  installToolFilter(server, filter);
 
   registerReadTools(server, api, config, options.webSocketFactory);
 

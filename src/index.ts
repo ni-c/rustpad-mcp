@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { loadConfig } from './config.js';
 import { createServer } from './server.js';
+import { ToolFilterError } from './tool-filter.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -18,7 +19,18 @@ async function main(): Promise<void> {
     );
   }
 
-  const server = createServer(config);
+  let server;
+  try {
+    server = createServer(config);
+  } catch (error) {
+    // A bad tool list is operator feedback, not a crash: print the
+    // sentence on its own rather than behind "fatal error:".
+    if (error instanceof ToolFilterError) {
+      console.error(`rustpad-mcp: ${error.message}`);
+      process.exit(1);
+    }
+    throw error;
+  }
   // stdout belongs to the protocol; everything human-readable goes to stderr.
   await server.connect(new StdioServerTransport());
   console.error(

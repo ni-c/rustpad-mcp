@@ -1,5 +1,10 @@
 # Tools
 
+All eight are registered unless you say otherwise. `RUSTPAD_ALLOW_TOOLS` and
+`RUSTPAD_DENY_TOOLS` narrow the list to the ones you want, and `essential` selects a
+curated five — see
+[choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
+
 Eight tools. `id` is always the pad id — the part after `#` in a pad's URL,
 restricted to letters, digits, dot, underscore and hyphen. All results that
 contain pad-derived text carry the untrusted-content marker.
