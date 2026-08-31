@@ -1,4 +1,5 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
+import { z } from 'zod';
 
 import { assertDocumentId, type RustpadApi } from '../api.js';
 import type { Config } from '../config.js';
@@ -30,7 +31,7 @@ export function registerReadTools(
         `Reads the current plain-text content of a pad. ${EPHEMERAL_NOTE} ` +
         'An empty result is ambiguous: Rustpad cannot distinguish an empty ' +
         'pad from one that never existed or has expired.',
-      inputSchema: { id: documentIdParam },
+      inputSchema: z.object({ id: documentIdParam }),
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async ({ id }) =>
@@ -54,7 +55,7 @@ export function registerReadTools(
         'Fetches metadata about a pad over the collaboration socket: content ' +
         'length, revision, editor language and the users who have it open ' +
         `right now. ${EPHEMERAL_NOTE}`,
-      inputSchema: { id: documentIdParam },
+      inputSchema: z.object({ id: documentIdParam }),
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async ({ id }) =>
@@ -85,7 +86,7 @@ export function registerReadTools(
         'Reads the Rustpad server statistics: start time, number of documents ' +
         'currently held in memory, and the number persisted in the database ' +
         '(0 when the instance runs without persistence).',
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async () =>

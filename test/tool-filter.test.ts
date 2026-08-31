@@ -1,17 +1,15 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import type { Config } from '../src/config.js';
-import { createServer } from '../src/server.js';
-import { ToolFilterError } from '../src/tool-filter.js';
 import {
   ALL_TOOLS,
   ESSENTIAL_TOOLS,
   READ_TOOLS,
   WRITE_TOOLS,
 } from '../src/tools/catalogue.js';
+
+import type { Config } from '../src/config.js';
+import { createServer } from '../src/server.js';
+import { ToolFilterError } from '../src/tool-filter.js';
 
 const base: Config = {
   url: 'https://rustpad.example.net',
@@ -156,15 +154,15 @@ describe('a filtered-out tool', () => {
       client.connect(clientTransport),
     ]);
 
-    const result = (await client.callTool({
-      name: 'append_to_document',
-      arguments: {},
-    })) as CallToolResult;
-
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toContain(
-      'Tool append_to_document not found'
-    );
+    // SDK v2 reports an unknown tool as a JSON-RPC error rather than as a
+    // result carrying isError. Either way the call fails and nothing reaches
+    // the API, which is what this test is about.
+    await expect(
+      client.callTool({
+        name: 'append_to_document',
+        arguments: {},
+      })
+    ).rejects.toThrow('Tool append_to_document not found');
     expect(calls).toHaveLength(0);
   });
 });

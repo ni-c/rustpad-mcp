@@ -1,6 +1,5 @@
 import { createRequire } from 'node:module';
-
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
 
 import { RustpadApi } from './api.js';
 import { buildToolFilter, installToolFilter } from './tool-filter.js';

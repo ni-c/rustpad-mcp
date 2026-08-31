@@ -1,18 +1,12 @@
 import { createHash, randomInt } from 'node:crypto';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import { assertDocumentId } from '../api.js';
-import { ConfirmationStore, confirmationPrompt } from '../confirm.js';
-import type { Config } from '../config.js';
 import {
   appendOps,
   codepointLength,
   replaceOps,
   searchReplaceOps,
 } from '../ot.js';
-import { run, textResult, ToolInputError } from '../result.js';
 import {
   confirmTokenParam,
   documentIdParam,
@@ -20,6 +14,11 @@ import {
   languageParam,
   wellFormed,
 } from '../schema.js';
+
+import { assertDocumentId } from '../api.js';
+import { ConfirmationStore, confirmationPrompt } from '../confirm.js';
+import type { Config } from '../config.js';
+import { run, textResult, ToolInputError } from '../result.js';
 import { withSession, type WebSocketFactory } from '../session.js';
 import { EPHEMERAL_NOTE, shareUrl } from './read.js';
 
@@ -52,13 +51,13 @@ export function registerWriteTools(
         'language, and returns its shareable URL. Without an id a random one ' +
         `is generated. ${EPHEMERAL_NOTE} Anyone who knows the URL can read ` +
         'and edit the pad.',
-      inputSchema: {
+      inputSchema: z.object({
         id: documentIdParam
           .optional()
           .describe('Desired pad id; omit to generate a random one'),
         text: documentTextParam.optional().describe('Initial content'),
         language: languageParam.optional(),
-      },
+      }),
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
     async ({ id, text, language }) =>
@@ -102,11 +101,11 @@ export function registerWriteTools(
         'requires confirmation: call once to receive a token, then again ' +
         'with that token. For targeted changes prefer replace_in_document, ' +
         'which leaves concurrent edits elsewhere in the pad intact.',
-      inputSchema: {
+      inputSchema: z.object({
         id: documentIdParam,
         text: documentTextParam,
         confirm_token: confirmTokenParam,
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -160,10 +159,10 @@ export function registerWriteTools(
         'Appends text to the end of a pad, leaving everything else — ' +
         'including concurrent edits — untouched. The text is appended ' +
         'verbatim; include a leading newline to start a new line.',
-      inputSchema: {
+      inputSchema: z.object({
         id: documentIdParam,
         text: documentTextParam.min(1).describe('Text to append verbatim'),
-      },
+      }),
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
     async ({ id, text }) =>
@@ -189,7 +188,7 @@ export function registerWriteTools(
         'ranges are edited, so concurrent edits elsewhere in the pad ' +
         'survive. By default the search string must match exactly once; set ' +
         'replace_all to change every occurrence.',
-      inputSchema: {
+      inputSchema: z.object({
         id: documentIdParam,
         search: wellFormed(
           z
@@ -206,7 +205,7 @@ export function registerWriteTools(
           .describe(
             'Replace every occurrence instead of requiring a unique match'
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -252,7 +251,7 @@ export function registerWriteTools(
         'Sets the syntax-highlighting language of a pad (Monaco language id, ' +
         'e.g. "markdown", "javascript", "rust"). Last writer wins; the change ' +
         'is visible to everyone who has the pad open.',
-      inputSchema: { id: documentIdParam, language: languageParam },
+      inputSchema: z.object({ id: documentIdParam, language: languageParam }),
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
     async ({ id, language }) =>
