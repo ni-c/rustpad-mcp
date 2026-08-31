@@ -30,7 +30,7 @@ npm run build
   against, or the one your change might open, in the PR text.
 - **No new runtime dependencies** without a very good reason; the small tree is a
   feature.
-- Run `npm run lint` before pushing — it checks both eslint and prettier, and
+- Run `npm run lint` before pushing — it checks both oxlint and prettier, and
   prettier also validates the YAML, JSON and Markdown files.
 
 ## Verifying against a real Rustpad
