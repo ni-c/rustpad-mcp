@@ -1,10 +1,12 @@
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/server';
 
+import { buildToolFilter, installToolFilter } from 'mcp-tool-allowlist';
+
 import { RustpadApi } from './api.js';
-import { buildToolFilter, installToolFilter } from './tool-filter.js';
 import { ConfirmationStore } from './confirm.js';
 import type { Config } from './config.js';
+import { ALL_TOOLS, ESSENTIAL_TOOLS, READ_TOOLS } from './tools/catalogue.js';
 import type { WebSocketFactory } from './session.js';
 import { registerReadTools } from './tools/read.js';
 import { registerWriteTools } from './tools/write.js';
@@ -29,7 +31,28 @@ export function createServer(
 ): McpServer {
   // Before anything is built: an unusable tool list should fail on the
   // way in, not leave a server running with tools quietly missing.
-  const filter = buildToolFilter(config);
+  const filter = buildToolFilter({
+    allowTools: config.allowTools,
+    denyTools: config.denyTools,
+    catalogue: {
+      all: ALL_TOOLS,
+      essential: ESSENTIAL_TOOLS,
+      ungated: READ_TOOLS,
+    },
+    names: {
+      allow: 'RUSTPAD_ALLOW_TOOLS',
+      deny: 'RUSTPAD_DENY_TOOLS',
+      server: 'rustpad-mcp',
+    },
+    // No `activatesFilter`: read-only is carried by server.ts, which does not
+    // register the write tools at all. The gate is declared anyway so that a
+    // suppressed name is answered with the reason rather than "no such tool".
+    gate: {
+      closed: config.readOnly,
+      variable: 'RUSTPAD_READ_ONLY',
+      noun: 'read-only mode',
+    },
+  });
 
   const api = new RustpadApi(config);
   const confirmations = new ConfirmationStore();
