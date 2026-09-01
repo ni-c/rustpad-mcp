@@ -9,6 +9,7 @@ const BASE: Config = {
   url: 'https://rustpad.example.net',
   insecureTls: false,
   readOnly: false,
+  elicitation: true,
 };
 
 /** How a client that can show a dialog answers it. */
@@ -587,19 +588,137 @@ describe('replace_in_document', () => {
     expect(fake.doc('doc').text).toBe('a b a b a');
   });
 
-  it('replaces every occurrence with replace_all', async () => {
+  it('replaces every occurrence with replace_all, once a person agrees', async () => {
     const fake = new FakeRustpad();
     fake.seed('doc', 'a b a b a');
-    const client = await connect(fake);
+    const client = await connect(fake, {}, 'accept');
     const result = await callText(client, 'replace_in_document', {
       id: 'doc',
       search: 'a',
       replace: 'z',
       replace_all: true,
     });
+    expect(client.prompts).toHaveLength(1);
     expect(result.isError).toBe(false);
     expect(result.text).toContain('Replaced 3 occurrences');
     expect(fake.doc('doc').text).toBe('z b z b z');
+  });
+
+  it('does not ask for a single, unique replacement', async () => {
+    // The line this draws. One targeted edit is what the tool is for, and a
+    // dialog on every one of them is how people learn to tick without reading.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'status: open');
+    const client = await connect(fake, {}, 'accept');
+    const result = await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'open',
+      replace: 'done',
+    });
+    expect(client.prompts).toHaveLength(0);
+    expect(result.text).not.toContain('confirm_token=');
+    expect(fake.doc('doc').text).toBe('status: done');
+  });
+
+  it('changes nothing across the pad when the person declines', async () => {
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'a b a b a');
+    const client = await connect(fake, {}, 'decline');
+    const result = await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'a',
+      replace: 'z',
+      replace_all: true,
+    });
+    expect(result.isError).toBe(true);
+    expect(fake.doc('doc').text).toBe('a b a b a');
+  });
+
+  it('says how many places it is about to change, and shows the pair', async () => {
+    // The number is the whole point: a search string that is shorter than
+    // intended is exactly the mistake this catches, and it is only visible as
+    // a count. The pair itself is caller-chosen, so it goes on labelled lines
+    // rather than into the sentence.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'a b a b a');
+    const client = await connect(fake, {}, 'decline');
+    await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'a',
+      replace: 'z',
+      replace_all: true,
+    });
+    const prompt = client.prompts[0] ?? '';
+    expect(prompt).toContain('replace 3 occurrences in pad "doc"');
+    expect(prompt).toMatch(/^ {2}Search: a$/m);
+    expect(prompt).toMatch(/^ {2}Replace with: z$/m);
+  });
+
+  it('falls back to the two-call token where nobody can be asked', async () => {
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'a b a b a');
+    const client = await connect(fake);
+
+    const first = await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'a',
+      replace: 'z',
+      replace_all: true,
+    });
+    expect(first.text).toContain('confirm_token=');
+    expect(fake.doc('doc').text).toBe('a b a b a');
+
+    const second = await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'a',
+      replace: 'z',
+      replace_all: true,
+      confirm_token: tokenOf(first.text),
+    });
+    expect(second.isError).toBe(false);
+    expect(fake.doc('doc').text).toBe('z b z b z');
+  });
+
+  it('does not accept a token issued for a different pair', async () => {
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'a b a b a');
+    const client = await connect(fake);
+    const first = await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'a',
+      replace: 'z',
+      replace_all: true,
+    });
+    const swapped = await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'a',
+      replace: '',
+      replace_all: true,
+      confirm_token: tokenOf(first.text),
+    });
+    expect(swapped.isError).toBe(true);
+    expect(swapped.text).toContain('issued for different arguments');
+    expect(fake.doc('doc').text).toBe('a b a b a');
+  });
+
+  it('takes the switch off the dialog and onto the token', async () => {
+    // ELICITATION=false is not "no confirmation": the same client that would
+    // have been asked gets the token instead, and the pad still does not
+    // change until it comes back.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'a b a b a');
+    const client = await connect(fake, { elicitation: false }, 'accept');
+
+    const first = await callText(client, 'replace_in_document', {
+      id: 'doc',
+      search: 'a',
+      replace: 'z',
+      replace_all: true,
+    });
+    expect(client.prompts).toHaveLength(0);
+    expect(first.text).toContain('confirm_token=');
+    expect(first.text).toContain('switched off');
+    expect(fake.doc('doc').text).toBe('a b a b a');
   });
 
   it('errors when nothing matches', async () => {

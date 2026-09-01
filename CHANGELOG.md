@@ -25,6 +25,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries pad content: pads are world-writable, and the text would otherwise be
   written by whoever edited the pad last and read by whoever is deciding.
 
+- `replace_in_document` now asks too, but only when `replace_all` is about to
+  change **more than one** occurrence. It carries `destructiveHint: true` and
+  with a broad enough search string can take out as much of a pad as
+  `set_document` does — which asks. A single, unique replacement still goes
+  straight through: that is what the tool is for, and a dialog on every one of
+  them is how people learn to tick without reading.
+
+  The line is drawn on the count rather than on the flag, because the count is
+  the mistake worth catching. The number comes from the same pass that builds
+  the operations, so it is measured **inside** the open session: what the person
+  is told is the pad as it stands, not as it stood when the model decided.
+
+- `ELICITATION` switches the dialog off — `false` sends a client that could have
+  been asked down the two-call-token path instead. For a scheduled job or a test
+  harness, where a dialog is the wrong shape rather than an unwanted one.
+
+  It does **not** remove the guard: there is no setting in which a guarded call
+  goes unannounced. Two deliberate rough edges come with it. The variable is
+  **not prefixed**, so one `export ELICITATION=false` reaches every MCP server in
+  the environment — which is why a server started with it off prints a line
+  saying so, and why the fallback text names the server instead of blaming a
+  client that was working fine. And a value that is neither `true` nor `false`
+  **stops the server**: it is the only variable here that defaults to _on_, so
+  failing open on a typo would leave the dialog running while the operator
+  believed it was off.
+
 ### Changed
 
 - Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they

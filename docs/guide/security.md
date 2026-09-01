@@ -22,15 +22,28 @@ Every tool result that can contain pad-derived text is prefixed with an
 explicit marker telling the model it is data to report on, never instructions
 to follow. That covers `get_document`, `get_document_info` (user names and the
 editor language are chosen by arbitrary clients) and even surviving upstream
-error bodies. Confirmation prompts quote pad ids and character counts only.
+error bodies. Confirmation prompts quote pad ids and character counts only —
+never pad content, which is written by whoever last had the pad open.
 
-## Confirmation tokens
+## The confirmation, honestly
 
-`set_document` on a non-empty pad is the destructive operation here — the old
-content is unrecoverable. It requires a server-generated, single-use token that
-only ever appears in a *previous* tool result and is bound to the pad id
-**and** a fingerprint of the replacement text. A confirmation obtained for one
-replacement cannot execute a different one.
+Replacing a non-empty pad and search-replacing across more than one match are
+the two operations that take out content nobody can get back. Both **ask a
+person** through MCP elicitation — a dialog the model cannot answer on its
+behalf — and the approval is bound to the pad and the exact edit, so a
+confirmation obtained for one replacement cannot execute a different one.
+
+Where the client cannot show a dialog, they fall back to a single-use token
+that only ever appears in a *previous* tool result. Be clear about what that
+proves: **the call was made twice with the same arguments, and nothing more.**
+A model can read the token out of the first result and quote it back in the
+same turn without anybody seeing it. It catches a widened target set; it does
+not catch a model that was talked into the whole thing, and the fallback text
+says so rather than implying somebody approved.
+
+`ELICITATION=false` moves a capable client onto that fallback deliberately. It
+does not remove the guard, and the server says which of the two happened. See
+[Asking a person](/guide/approval).
 
 ## The server is untrusted too
 

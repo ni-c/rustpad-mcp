@@ -28,6 +28,15 @@ merge cleanly with what human collaborators type at the same time instead of
 overwriting it. While the server edits a pad, it is visible to everyone in the pad as
 a collaborator named `rustpad-mcp`.
 
+**The two edits that cannot be undone ask a person.** Where the client supports
+MCP elicitation, replacing a non-empty pad and search-replacing across more than
+one match raise a real dialog that the model cannot answer on its behalf — and
+the `replace_in_document` one says how many places are about to change. Where it
+does not, they fall back to a two-call token, and say so rather than implying
+somebody approved. `ELICITATION=false` takes that fallback deliberately; it
+never removes the guard. See
+[Asking a person](https://rustpad-mcp.ni-c.de/guide/approval).
+
 ![Demo of rustpad-mcp over the MCP inspector](https://rustpad-mcp.ni-c.de/demo.gif)
 
 <picture>
@@ -51,11 +60,18 @@ a collaborator named `rustpad-mcp`.
 | `RUSTPAD_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection only)           |
 | `RUSTPAD_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset |
 | `RUSTPAD_DENY_TOOLS`   | no       | Same syntax; removed from whatever `RUSTPAD_ALLOW_TOOLS` left                      |
+| `ELICITATION`          | no       | `false` replaces the approval dialog with the two-call token. **Not prefixed**     |
 
 The same URL serves the HTTP API, the WebSocket endpoint and the share links
-returned by the tools (`<RUSTPAD_URL>/#<pad-id>`). Booleans must be exactly
-`true`. The server starts and lists its tools without configuration; every
-call then fails with setup instructions.
+returned by the tools (`<RUSTPAD_URL>/#<pad-id>`). The `RUSTPAD_*` booleans must
+be exactly `true`. The server starts and lists its tools without configuration;
+every call then fails with setup instructions.
+
+`ELICITATION` is the odd one out twice over: it carries no prefix, so it reaches
+every MCP server in the same environment, and a value that is neither `true` nor
+`false` stops the server rather than falling back — it is the only variable here
+that defaults to _on_, and a typo would otherwise leave the dialog running while
+you believed it was off. A server started with it off prints one line saying so.
 
 Keep in mind what Rustpad is: **pads are ephemeral** (lost on server restart
 and after 24 hours of inactivity, unless the instance is run with
@@ -129,16 +145,19 @@ docker run -i --rm -e RUSTPAD_URL=https://rustpad.example.net ghcr.io/ni-c/rustp
 
 ## Tools
 
-| Tool                  | Description                                                               |
-| --------------------- | ------------------------------------------------------------------------- |
-| `get_document`        | Read the plain-text content of a pad                                      |
-| `get_document_info`   | Content length, revision, language and the users editing right now        |
-| `get_stats`           | Server statistics (uptime, number of documents)                           |
-| `create_document`     | Create a pad (random or chosen id), optionally with content and language  |
-| `set_document`        | Replace the entire content — non-empty pads require a confirmation token  |
-| `append_to_document`  | Append text; concurrent edits elsewhere survive                           |
-| `replace_in_document` | Exact search & replace via OT; unique match required unless `replace_all` |
-| `set_language`        | Set the Monaco syntax-highlighting language                               |
+| Tool                     | Description                                                              |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `get_document`           | Read the plain-text content of a pad                                     |
+| `get_document_info`      | Content length, revision, language and the users editing right now       |
+| `get_stats`              | Server statistics (uptime, number of documents)                          |
+| `create_document`        | Create a pad (random or chosen id), optionally with content and language |
+| `set_document` 👤        | Replace the entire content — a non-empty pad asks a person first         |
+| `append_to_document`     | Append text; concurrent edits elsewhere survive                          |
+| `replace_in_document` 👤 | Exact search & replace via OT; asks when it changes more than one place  |
+| `set_language`           | Set the Monaco syntax-highlighting language                              |
+
+👤 asks a person through MCP elicitation · falls back to a two-call
+`confirm_token` where the client cannot show a dialog.
 
 With `RUSTPAD_READ_ONLY=true` only the first three are registered.
 
@@ -147,8 +166,11 @@ With `RUSTPAD_READ_ONLY=true` only the first three are registered.
 - Pad content is world-writable and therefore untrusted: every read result is
   prefixed with a marker telling the model to treat it as data, never as
   instructions.
-- Replacing a non-empty pad is irreversible and guarded by a single-use
-  confirmation token that only ever appears in a previous tool result.
+- The two irreversible edits ask a person: a real dialog the model cannot
+  answer on its behalf, bound to the pad and the exact replacement. Where the
+  client cannot show one, a single-use token that only ever appears in a
+  previous tool result — which proves the call was made twice with the same
+  arguments, and nothing more. The fallback text says which of the two it was.
 - Tool results are size-capped; upstream error bodies are sanitized before
   they reach the model.
 - `RUSTPAD_INSECURE_TLS` relaxes certificate validation only for the

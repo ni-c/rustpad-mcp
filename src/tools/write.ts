@@ -16,7 +16,11 @@ import {
 } from '../schema.js';
 
 import { assertDocumentId } from '../api.js';
-import type { Approver, ConfirmationStore } from 'mcp-approval';
+import {
+  setResourceKey,
+  type Approver,
+  type ConfirmationStore,
+} from 'mcp-approval';
 import type { Config } from '../config.js';
 import { run, textResult, ToolInputError } from '../result.js';
 import { withSession, type WebSocketFactory } from '../session.js';
@@ -224,9 +228,11 @@ export function registerWriteTools(
         'Replaces an exact string in a pad with another. Only the matched ' +
         'ranges are edited, so concurrent edits elsewhere in the pad ' +
         'survive. By default the search string must match exactly once; set ' +
-        'replace_all to change every occurrence.',
+        'replace_all to change every occurrence. Replacing more than one ' +
+        'occurrence at once asks a person first.',
       inputSchema: z.object({
         id: documentIdParam,
+        confirm_token: confirmTokenParam,
         search: wellFormed(
           z
             .string()
@@ -253,7 +259,7 @@ export function registerWriteTools(
         openWorldHint: false,
       },
     },
-    async ({ id, search, replace, replace_all }) =>
+    async ({ id, search, replace, replace_all, confirm_token }, mcp) =>
       run(async () => {
         assertDocumentId(id);
         if (search === replace) {
@@ -275,6 +281,54 @@ export function registerWriteTools(
             throw new ToolInputError(
               `the search string occurs ${count} times in pad "${id}" — pass replace_all=true or a longer, unique search string`
             );
+          }
+          // A single, unique replacement is a targeted edit and goes through.
+          // `replace_all` across several matches is the case that can take out
+          // as much of a pad as set_document does, and set_document asks — so
+          // this asks too, and says how many places it is about to change.
+          //
+          // The count comes from `searchReplaceOps` above, which means it was
+          // measured inside the open session: what the person is told is the
+          // pad as it stands, not as it stood when the model decided.
+          if (count > 1) {
+            const outcome = await approval.requestApproval(
+              server,
+              mcp,
+              confirmations,
+              {
+                what: `replace ${count} occurrences in pad "${id}"`,
+                consequence:
+                  'What is replaced cannot be restored, and a search string ' +
+                  'that is shorter than intended matches in places nobody ' +
+                  'looked at.',
+                // Bound to the pad, the exact pair and the number of matches:
+                // an approval for two occurrences does not execute against a
+                // pad that has since grown a third.
+                resourceKey: setResourceKey('replace_in_document', [
+                  id,
+                  search,
+                  replace,
+                  String(count),
+                ]),
+                token: confirm_token,
+                details: [
+                  { label: 'Search', value: search },
+                  { label: 'Replace with', value: replace },
+                ],
+                title: `Replace ${count} occurrences in pad "${id}"?`,
+                hint: 'Tick to replace them, leave it to cancel.',
+                toolName: 'replace_in_document',
+              }
+            );
+            if (outcome.decision === 'declined') {
+              throw new ToolInputError(
+                'rustpad-mcp: the user declined. The pad was not changed.'
+              );
+            }
+            if (outcome.decision === 'rejected') {
+              throw new ToolInputError(`rustpad-mcp: ${outcome.reason}`);
+            }
+            if (outcome.decision === 'pending') return outcome.result;
           }
           await session.edit(ops);
           return textResult(

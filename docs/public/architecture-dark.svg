@@ -45,7 +45,7 @@
   <rect class="node-accent" x="280" y="55" width="170" height="110" rx="10" />
   <text class="label-title" x="365" y="87" text-anchor="middle">rustpad-mcp</text>
   <text class="label-muted" x="365" y="107" text-anchor="middle">8 tools</text>
-  <text class="label-muted" x="365" y="125" text-anchor="middle">confirm tokens</text>
+  <text class="label-muted" x="365" y="125" text-anchor="middle">asks a person</text>
   <text class="label-muted" x="365" y="143" text-anchor="middle">read-only mode</text>
 
   <rect class="node" x="550" y="70" width="150" height="80" rx="10" />

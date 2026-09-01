@@ -1,12 +1,13 @@
 # Configuration
 
-Three environment variables; only the first is required.
+Four environment variables; only the first is required.
 
 | Variable               | Required | Description                                                              |
 | ---------------------- | -------- | ------------------------------------------------------------------------ |
 | `RUSTPAD_URL`          | yes      | Base URL of the instance, e.g. `https://rustpad.example.net`             |
 | `RUSTPAD_READ_ONLY`    | no       | `true` registers only the read tools                                     |
 | `RUSTPAD_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection only) |
+| `ELICITATION`          | no       | `false` replaces the approval dialog with the two-call token             |
 
 ## One URL for everything
 
@@ -23,9 +24,28 @@ unencrypted. A malformed URL exits instead of limping along.
 
 ## Boolean semantics
 
-The two flags compare against exactly the string `true`. `True`, `1` or `yes`
-count as **false** — deliberately strict, and the reason the server prints a
-banner on start when read-only or insecure-TLS mode is actually active.
+`RUSTPAD_READ_ONLY` and `RUSTPAD_INSECURE_TLS` compare against exactly the
+string `true`. `True`, `1` or `yes` count as **false** — deliberately strict,
+and the reason the server prints a banner on start when read-only or
+insecure-TLS mode is actually active.
+
+`ELICITATION` is the exception, in both directions: it is case-insensitive, and
+a value that is neither `true` nor `false` **stops the server** instead of
+falling back. It is the only one of the three that defaults to *on*, so failing
+open on a typo would leave the dialog running while the operator believed it
+was off.
+
+## Turning the approval dialog off
+
+Guarded tools — `set_document` on a non-empty pad, `replace_in_document` across
+more than one match — ask a person through MCP elicitation before they act.
+`ELICITATION=false` takes them to the two-call token instead. It does not
+remove the guard; there is no setting in which a guarded call goes
+unannounced.
+
+The variable deliberately carries no `RUSTPAD_` prefix, which means it reaches
+every MCP server in the same environment. [Asking a person](/guide/approval)
+explains what that costs and what makes it visible.
 
 ## Ephemerality
 

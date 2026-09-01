@@ -21,8 +21,8 @@ features:
     details: Rustpad has no accounts, so every pad is untrusted by definition. All content that comes out of a pad — reads, metadata, even upstream error bodies — is explicitly marked as data, never instructions, before a model sees it.
   - title: Eight tools, or three
     details: 'RUSTPAD_READ_ONLY=true registers the read tools and nothing else. RUSTPAD_ALLOW_TOOLS cuts finer — essential for a curated five, your own comma-separated list, or a whole family with list_* — and RUSTPAD_DENY_TOOLS subtracts. Whatever is filtered out does not exist on the protocol rather than failing when called, and a name that matches no tool stops the server at startup instead of quietly going missing.'
-  - title: Safe by default
-    details: Replacing a non-empty pad needs a single-use server-issued confirmation token bound to the pad and the exact replacement text; read-only mode simply does not register the write tools; every session buffer and wait is hard-capped against a hostile upstream.
+  - title: A person is asked, not just told
+    details: 'Replacing a non-empty pad, or search-replacing in more than one place at once, raises a real dialog through MCP elicitation — one the model cannot answer on its behalf, and one that says how many places are about to change. Where the client cannot show a dialog it falls back to a single-use token bound to the pad and the exact edit, and says so rather than implying somebody approved. ELICITATION=false takes the fallback path deliberately; it never removes the guard.'
 ---
 
 <figure class="diagram">
@@ -47,7 +47,7 @@ features:
   <rect class="node-accent" x="280" y="55" width="170" height="110" rx="10" />
   <text class="label-title" x="365" y="87" text-anchor="middle">rustpad-mcp</text>
   <text class="label-muted" x="365" y="107" text-anchor="middle">8 tools</text>
-  <text class="label-muted" x="365" y="125" text-anchor="middle">confirm tokens</text>
+  <text class="label-muted" x="365" y="125" text-anchor="middle">asks a person</text>
   <text class="label-muted" x="365" y="143" text-anchor="middle">read-only mode</text>
 
   <rect class="node" x="550" y="70" width="150" height="80" rx="10" />
@@ -68,7 +68,7 @@ features:
   <text class="label-muted" x="625" y="232" text-anchor="middle">the server transforms concurrent edits</text>
 </svg>
 <!-- ARCHITECTURE:END -->
-<figcaption>One stdio server between the MCP client and Rustpad — reads over HTTPS, writes over the collaboration WebSocket, destructive calls gated by confirmation tokens.</figcaption>
+<figcaption>One stdio server between the MCP client and Rustpad — reads over HTTPS, writes over the collaboration WebSocket, destructive calls put to a person first.</figcaption>
 </figure>
 
 ## See it in action

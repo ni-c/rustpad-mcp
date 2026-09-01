@@ -39,9 +39,21 @@ they are folded in, and a connection that fails mid-handshake is closed rather t
 leaked. `RUSTPAD_INSECURE_TLS=true` relaxes certificate validation only for the
 configured connection via a scoped dispatcher, never process-wide.
 
-## Confirmation tokens
+## The confirmation, honestly
 
-Replacing the content of a non-empty pad requires a server-generated token that is
-bound to the pad id **and** a fingerprint of the replacement text, and can be used
-once within five minutes. A model cannot satisfy that gate on its own, and a token
-issued for one replacement cannot be replayed for a different pad or different text.
+Replacing the content of a non-empty pad, and search-replacing across more than one
+match, **ask a person** through MCP elicitation — a dialog raised by the server and
+shown by the client, which the model cannot answer on its behalf. Nothing happens
+until an answer comes back, and the approval is bound to the pad and the exact edit,
+so one obtained for a rename cannot execute a different replacement.
+
+Where the client cannot show a dialog, both fall back to a server-generated token
+that can be used once within five minutes and is bound the same way. That fallback
+is weaker and this server says so rather than implying somebody approved: **it
+proves the call was made twice with the same arguments, and nothing more.** A model
+can read the token out of the first result and quote it back in the same turn.
+
+`ELICITATION=false` moves a capable client onto that fallback deliberately, for
+deployments where a dialog is the wrong shape — a scheduled job, a test harness. It
+does not remove the guard, the server prints one line at startup saying it is off,
+and the fallback text names the server rather than blaming the client.

@@ -5,6 +5,7 @@
 | `RUSTPAD_URL`          | yes      | —       | Base URL of the Rustpad instance                         |
 | `RUSTPAD_READ_ONLY`    | no       | `false` | `true` registers only the read tools                     |
 | `RUSTPAD_INSECURE_TLS` | no       | `false` | `true` accepts self-signed certificates, scoped          |
+| `ELICITATION`          | no       | `true`  | `false` falls back to the two-call token. **Not prefixed** |
 
 ## RUSTPAD_URL
 
@@ -25,6 +26,26 @@ are not registered at all — the connection never advertises them.
 Compared against exactly the string `true`. Disables certificate validation for
 the configured connection only, via a dedicated dispatcher — never process-wide.
 The server prints a banner on start when this is active.
+
+## ELICITATION
+
+Whether a client that *can* show a dialog is asked before a guarded tool acts.
+Default `true`. `false` takes the two-call-token path instead — it does not
+remove the guard, and a server started with it off says so on one startup line.
+
+Unlike every other variable here it carries **no prefix**, so one
+`export ELICITATION=false` reaches every MCP server in the same environment.
+That is the point of it and also its risk; see
+[Asking a person](/guide/approval).
+
+Unlike every other boolean here it is also **fatal on anything else**: `1`,
+`off` or a typo stop the server with exit code 1 rather than falling back to
+the default. It is the only variable of this family that defaults to *on*, and
+a typo that fell back would leave the dialog running while the operator
+believed it was off.
+
+Values are trimmed and matched case-insensitively, so `False` and ` false `
+both work — the strictness is about which words count, not about their shape.
 
 There are no secrets: Rustpad has no authentication, and this server therefore
 handles no tokens or passwords at all.

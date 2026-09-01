@@ -10,7 +10,15 @@ export interface Config {
    */
   url: string | undefined;
   insecureTls: boolean;
-  readOnly: boolean; /**
+  readOnly: boolean;
+  /**
+   * Whether a client that *can* show a dialog is asked before a guarded tool
+   * acts. `ELICITATION=false` turns the dialog off — the guard stays and falls
+   * back to the two-call token, so there is no setting in which a guarded call
+   * goes unannounced.
+   */
+  elicitation: boolean;
+  /**
    * Raw value of `RUSTPAD_ALLOW_TOOLS` — comma-separated tool names, `list_*`
    * prefixes, or `essential`. Kept unparsed on purpose: this file is a mirror of
    * the environment, and the names can only be checked against the tool
@@ -29,13 +37,39 @@ export function missingConfigMessage(missing: string[]): string {
     'Rustpad has no authentication: anyone who can reach the instance and ' +
     'knows a pad id can read and write it.\n' +
     'Optional: RUSTPAD_READ_ONLY=true to expose only read tools, ' +
-    'RUSTPAD_INSECURE_TLS=true to accept self-signed certificates'
+    'RUSTPAD_INSECURE_TLS=true to accept self-signed certificates, ' +
+    'RUSTPAD_ALLOW_TOOLS / RUSTPAD_DENY_TOOLS to choose which tools load, ' +
+    'ELICITATION=false to fall back to the two-call confirmation token'
   );
 }
 
 /** Names of the required environment variables that are unset in `config`. */
 export function missingConfigKeys(config: Config): string[] {
   return [!config.url && 'RUSTPAD_URL'].filter((v): v is string => Boolean(v));
+}
+
+/**
+ * Reads `ELICITATION` — deliberately unprefixed, and deliberately fatal on
+ * anything it does not recognise.
+ *
+ * Unprefixed: environment variables are process-wide, so this is one switch for
+ * every server in the same environment. That is also its risk, which is why a
+ * server started with it off says so on its startup line.
+ *
+ * Fatal: this is the first variable of the family that defaults to *on*. The
+ * others fail open on a typo, which is the safe direction for them. Here a typo
+ * would leave the dialog running while the operator believes it is off — and an
+ * operator who believes that has no way to find out.
+ */
+export function parseElicitation(raw: string | undefined): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (value === undefined || value === '' || value === 'true') return true;
+  if (value === 'false') return false;
+  console.error(
+    `rustpad-mcp: ELICITATION must be "true" or "false" — got "${raw}". ` +
+      'Refusing to start rather than guess.'
+  );
+  process.exit(1);
 }
 
 /**
@@ -50,12 +84,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const url = env.RUSTPAD_URL;
   const insecureTls = env.RUSTPAD_INSECURE_TLS === 'true';
   const readOnly = env.RUSTPAD_READ_ONLY === 'true';
+  const elicitation = parseElicitation(env.ELICITATION);
   const allowTools = env.RUSTPAD_ALLOW_TOOLS;
   const denyTools = env.RUSTPAD_DENY_TOOLS;
 
   if (!url) {
     console.error(`rustpad-mcp: ${missingConfigMessage(['RUSTPAD_URL'])}`);
-    return { url: undefined, insecureTls, readOnly, allowTools, denyTools };
+    return {
+      url: undefined,
+      insecureTls,
+      readOnly,
+      elicitation,
+      allowTools,
+      denyTools,
+    };
   }
 
   let parsed: URL;
@@ -99,6 +141,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     url: url.replace(/\/+$/, ''),
     insecureTls,
     readOnly,
+    elicitation,
     allowTools,
     denyTools,
   };

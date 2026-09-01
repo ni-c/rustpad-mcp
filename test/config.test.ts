@@ -6,6 +6,8 @@ import {
   missingConfigMessage,
 } from '../src/config.js';
 
+const URL_OK = 'https://rustpad.example.net';
+
 function silence() {
   return vi.spyOn(console, 'error').mockImplementation(() => undefined);
 }
@@ -27,6 +29,47 @@ describe('loadConfig', () => {
       url: 'https://rustpad.example.net',
       insecureTls: false,
       readOnly: false,
+      elicitation: true,
+    });
+  });
+
+  describe('ELICITATION', () => {
+    it('defaults to on, and to on for an empty value', () => {
+      // The only variable of this family that defaults to *on*. An unset
+      // switch has to mean "ask", or a deployment that never heard of it
+      // would quietly stop asking.
+      expect(loadConfig({ RUSTPAD_URL: URL_OK }).elicitation).toBe(true);
+      expect(
+        loadConfig({ RUSTPAD_URL: URL_OK, ELICITATION: '' }).elicitation
+      ).toBe(true);
+    });
+
+    it('is switched off by "false", in any casing or padding', () => {
+      for (const raw of ['false', 'FALSE', ' False ']) {
+        expect(
+          loadConfig({ RUSTPAD_URL: URL_OK, ELICITATION: raw }).elicitation,
+          raw
+        ).toBe(false);
+      }
+    });
+
+    it('refuses to start on anything else, naming both valid values', () => {
+      // Deliberately fatal rather than falling back to the default. A typo
+      // would leave the dialog running while the operator believes it is off,
+      // and nothing else would ever tell them.
+      for (const raw of ['1', 'off', 'no', 'yes']) {
+        const error = silence();
+        const exit = trapExit();
+        expect(() =>
+          loadConfig({ RUSTPAD_URL: URL_OK, ELICITATION: raw })
+        ).toThrow('exit');
+        expect(exit).toHaveBeenCalledWith(1);
+        const message = String(error.mock.calls[0]?.[0] ?? '');
+        expect(message, raw).toContain('ELICITATION');
+        expect(message, raw).toContain('"true"');
+        expect(message, raw).toContain('"false"');
+        vi.restoreAllMocks();
+      }
     });
   });
 

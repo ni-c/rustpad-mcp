@@ -59,7 +59,10 @@ export function createServer(
   const confirmations = new ConfirmationStore();
   // One approver per server, because it holds the key that seals the request
   // state carried through the client and back.
-  const approval = createApproval({ server: 'rustpad-mcp' });
+  const approval = createApproval({
+    server: 'rustpad-mcp',
+    elicitation: config.elicitation,
+  });
 
   const server = new McpServer({
     name: 'rustpad-mcp',

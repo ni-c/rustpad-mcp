@@ -22,13 +22,22 @@ By default the search string must match exactly once, so the model cannot
 accidentally rewrite more than it looked at. Either make the search string
 longer (include surrounding context) or pass `replace_all: true` deliberately.
 
-## Why does `set_document` ask for a confirm token?
+## Why did a dialog appear before `set_document`?
 
-Replacing a non-empty pad destroys content that cannot be restored. The first
-call returns a single-use token; calling again with it executes. This is
-deliberate friction — for targeted changes `replace_in_document` and
-`append_to_document` need no token, and they are also the tools that play
+Replacing a non-empty pad destroys content that cannot be restored, so a person
+is asked first. `replace_in_document` asks too, but only when `replace_all` is
+about to change more than one place. For a single targeted change, and for
+`append_to_document`, nothing is asked — those are also the tools that play
 nicely with concurrent human edits.
+
+## A tool answered with a `confirm_token` instead of asking
+
+That is the fallback for a client that cannot show a dialog. Call the tool
+again with the same arguments plus the token; it is single-use and lasts five
+minutes. See [Asking a person](/guide/approval) for what it does and does not
+prove — and if your client *can* show dialogs, check whether `ELICITATION` is
+set to `false` somewhere in the environment. It is not prefixed, so it may have
+been meant for a different server.
 
 ## Someone saw "rustpad-mcp" in their pad
 
