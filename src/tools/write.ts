@@ -16,7 +16,7 @@ import {
 } from '../schema.js';
 
 import { assertDocumentId } from '../api.js';
-import { ConfirmationStore, confirmationPrompt } from '../confirm.js';
+import { ConfirmationStore, confirmationPrompt } from 'mcp-approval';
 import type { Config } from '../config.js';
 import { run, textResult, ToolInputError } from '../result.js';
 import { withSession, type WebSocketFactory } from '../session.js';
@@ -133,12 +133,12 @@ export function registerWriteTools(
             const key = `set_document:${id}:${fingerprint}`;
             if (!confirmations.consume(key, confirm_token)) {
               return textResult(
-                confirmationPrompt(
-                  `replace the entire content of pad "${id}" (${oldLength} characters) with new content (${codepointLength(text)} characters)`,
-                  confirmations.issue(key),
-                  confirmations.ttlMinutes,
-                  'The previous content cannot be restored.'
-                )
+                confirmationPrompt({
+                  what: `replace the entire content of pad "${id}" (${oldLength} characters) with new content (${codepointLength(text)} characters)`,
+                  token: confirmations.issue(key),
+                  ttlMinutes: confirmations.ttlMinutes,
+                  consequence: 'The previous content cannot be restored.',
+                })
               );
             }
           }

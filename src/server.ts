@@ -1,10 +1,11 @@
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/server';
 
+import { ConfirmationStore } from 'mcp-approval';
 import { buildToolFilter, installToolFilter } from 'mcp-tool-allowlist';
 
 import { RustpadApi } from './api.js';
-import { ConfirmationStore } from './confirm.js';
+
 import type { Config } from './config.js';
 import { ALL_TOOLS, ESSENTIAL_TOOLS, READ_TOOLS } from './tools/catalogue.js';
 import type { WebSocketFactory } from './session.js';
