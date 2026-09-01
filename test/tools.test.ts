@@ -436,7 +436,11 @@ describe('set_document', () => {
       text: 'something entirely different',
       confirm_token: tokenOf(first.text),
     });
-    expect(swapped.text).toContain('confirm_token=');
+    // Refused with the reason rather than answered with a new prompt: the
+    // token was issued for a different replacement, which is exactly what the
+    // key binds against, and a fresh prompt would say nothing about that.
+    expect(swapped.isError).toBe(true);
+    expect(swapped.text).toContain('issued for different arguments');
     expect(fake.doc('doc').text).toBe('original');
   });
 
@@ -454,7 +458,8 @@ describe('set_document', () => {
       text: 'x',
       confirm_token: tokenOf(first.text),
     });
-    expect(cross.text).toContain('confirm_token=');
+    expect(cross.isError).toBe(true);
+    expect(cross.text).toContain('issued for different arguments');
     expect(fake.doc('b').text).toBe('bbb');
   });
 

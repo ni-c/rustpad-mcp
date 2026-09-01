@@ -42,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `confirm_token` that does not match is now refused with the reason —
+  invalid, expired, or issued for different arguments — instead of being
+  answered with a fresh prompt. The second is self-healing when a token merely
+  expired and silent when the token was issued for a different pad or a
+  different replacement, which is the case the binding exists to catch.
+
 - Confirmation tokens are compared with a **constant-time** comparison. The
   copy in this repository used `!==`, which leaks through timing how much of a
   guess was right. Reaching a token still requires having received it in a

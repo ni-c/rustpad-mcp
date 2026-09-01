@@ -150,6 +150,14 @@ export function registerWriteTools(
                 'rustpad-mcp: the user declined. The pad was not changed.'
               );
             }
+            // A token that was sent and did not match is refused with the
+            // reason rather than answered with a fresh prompt: it means the
+            // call carried a confirmation issued for a different pad or a
+            // different replacement text, which is what the key binds against.
+            // The sentence is the library's, so every server says the same.
+            if (outcome.decision === 'rejected') {
+              throw new ToolInputError(`rustpad-mcp: ${outcome.reason}`);
+            }
             if (outcome.decision === 'pending') return outcome.result;
           }
           const ops = replaceOps(oldLength, text);
