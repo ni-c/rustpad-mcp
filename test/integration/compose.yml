@@ -1,0 +1,18 @@
+# Throwaway Rustpad for `npm run test:integration`.
+#
+# Not a managed stack: brought up, driven by the suite, destroyed afterwards.
+# The suite calls every tool in the catalogue, replacements included, so
+# nothing here may be a pad anybody is typing in.
+#
+# Bound to 127.0.0.1 only. Rustpad has no authentication at all — a pad id is
+# the only thing standing between a document and whoever guesses it — which is
+# exactly why this must not listen on anything but loopback.
+services:
+  rustpad:
+    # Overridable so the weekly CI run can point at a newer tag and report
+    # drift without changing what the PR gate tests.
+    image: ${RUSTPAD_IMAGE:-ekzhang/rustpad:latest}
+    environment:
+      RUST_LOG: info
+    ports:
+      - '127.0.0.1:3030:3030'
