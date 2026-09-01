@@ -59,7 +59,15 @@ export function registerWriteTools(
         text: documentTextParam.optional().describe('Initial content'),
         language: languageParam.optional(),
       }),
-      annotations: { readOnlyHint: false, openWorldHint: true },
+      annotations: {
+        // Additive: it brings a pad into existence and writes what was asked
+        // for. Idempotent because a pad is just an id — asking for the same one
+        // twice lands on the same pad rather than making a second.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ id, text, language }) =>
       run(async () => {
@@ -110,7 +118,11 @@ export function registerWriteTools(
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        openWorldHint: true,
+        // Idempotent in the sense the specification means: it names an
+        // absolute target state, so sending it twice leaves the pad exactly
+        // where the first call left it.
+        idempotentHint: true,
+        openWorldHint: false,
       },
     },
     async ({ id, text, confirm_token }, mcp) =>
@@ -181,7 +193,14 @@ export function registerWriteTools(
         id: documentIdParam,
         text: documentTextParam.min(1).describe('Text to append verbatim'),
       }),
-      annotations: { readOnlyHint: false, openWorldHint: true },
+      annotations: {
+        // Additive, and the one write here that is not idempotent: appending the
+        // same text twice leaves it in the pad twice.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ id, text }) =>
       run(async () => {
@@ -227,7 +246,11 @@ export function registerWriteTools(
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
-        openWorldHint: true,
+        // Not idempotent, and it is worth being exact about why: a second
+        // run is only a no-op while the replacement does not itself contain
+        // the search string. "a" -> "aa" grows the pad every time.
+        idempotentHint: false,
+        openWorldHint: false,
       },
     },
     async ({ id, search, replace, replace_all }) =>
@@ -270,7 +293,14 @@ export function registerWriteTools(
         'e.g. "markdown", "javascript", "rust"). Last writer wins; the change ' +
         'is visible to everyone who has the pad open.',
       inputSchema: z.object({ id: documentIdParam, language: languageParam }),
-      annotations: { readOnlyHint: false, openWorldHint: true },
+      annotations: {
+        // Overwrites a setting, not content — "last writer wins" is a change, not
+        // a destruction. Setting the same language twice is the same pad.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ id, language }) =>
       run(async () => {

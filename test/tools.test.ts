@@ -121,6 +121,53 @@ describe('tool registration', () => {
     expect(byName.get('set_document')?.annotations?.readOnlyHint).toBe(false);
   });
 
+  it('declares all four annotation hints on every tool', async () => {
+    // Not a style rule. Two of the four default to a *stronger* claim than
+    // silence suggests: the specification gives destructiveHint and
+    // openWorldHint a default of true, so a tool that omits them announces
+    // itself as destructive and open-world. Leaving them out is a statement,
+    // not an abstention — so every tool states all four.
+    const client = await connect(new FakeRustpad());
+    const { tools } = await client.listTools();
+    const hints = [
+      'readOnlyHint',
+      'destructiveHint',
+      'idempotentHint',
+      'openWorldHint',
+    ] as const;
+    for (const tool of tools) {
+      for (const hint of hints) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe(
+          'boolean'
+        );
+      }
+    }
+  });
+
+  it('separates the additive writes from the destructive ones', async () => {
+    // The distinction the annotations existed to draw but never reached the
+    // wire: three of the five write tools add or set without losing anything,
+    // and all five used to ship destructiveHint: true — two explicitly, three
+    // by default.
+    const client = await connect(new FakeRustpad());
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t.annotations]));
+    for (const additive of [
+      'create_document',
+      'append_to_document',
+      'set_language',
+    ]) {
+      expect(byName.get(additive)?.destructiveHint, additive).toBe(false);
+    }
+    for (const destructive of ['set_document', 'replace_in_document']) {
+      expect(byName.get(destructive)?.destructiveHint, destructive).toBe(true);
+    }
+    // Appending twice leaves the text twice; the other writes name a target
+    // state and land on it whatever they find.
+    expect(byName.get('append_to_document')?.idempotentHint).toBe(false);
+    expect(byName.get('set_document')?.idempotentHint).toBe(true);
+  });
+
   it('lists tools without configuration, but calls fail with setup help', async () => {
     const error = vi
       .spyOn(console, 'error')

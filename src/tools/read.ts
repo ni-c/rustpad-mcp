@@ -32,7 +32,12 @@ export function registerReadTools(
         'An empty result is ambiguous: Rustpad cannot distinguish an empty ' +
         'pad from one that never existed or has expired.',
       inputSchema: z.object({ id: documentIdParam }),
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ id }) =>
       run(async () => {
@@ -56,7 +61,12 @@ export function registerReadTools(
         'length, revision, editor language and the users who have it open ' +
         `right now. ${EPHEMERAL_NOTE}`,
       inputSchema: z.object({ id: documentIdParam }),
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ id }) =>
       run(async () => {
@@ -87,7 +97,12 @@ export function registerReadTools(
         'currently held in memory, and the number persisted in the database ' +
         '(0 when the instance runs without persistence).',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async () =>
       run(async () => {
