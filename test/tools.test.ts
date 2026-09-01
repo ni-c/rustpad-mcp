@@ -11,22 +11,47 @@ const BASE: Config = {
   readOnly: false,
 };
 
+/** How a client that can show a dialog answers it. */
+type ElicitBehaviour = 'accept' | 'decline' | 'cancel';
+
+/**
+ * Connects a client to the real server.
+ *
+ * Without `elicit` the client declares no elicitation capability, which is the
+ * case the two-call token exists for. With it, the client answers the dialog —
+ * and `prompts` records every message the server put in front of the user, so
+ * a test can assert what was shown as well as what was decided.
+ */
 async function connect(
   fake: FakeRustpad,
-  overrides: Partial<Config> = {}
-): Promise<Client> {
+  overrides: Partial<Config> = {},
+  elicit?: ElicitBehaviour
+): Promise<Client & { prompts: string[] }> {
   const server = createServer(
     { ...BASE, ...overrides },
     { webSocketFactory: fake.factory }
   );
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: 'test', version: '0.0.0' });
+  const prompts: string[] = [];
+  const client = new Client(
+    { name: 'test', version: '0.0.0' },
+    elicit === undefined ? {} : { capabilities: { elicitation: {} } }
+  );
+  if (elicit !== undefined) {
+    client.setRequestHandler('elicitation/create', (request) => {
+      const params = request.params as { message?: string };
+      prompts.push(params.message ?? '');
+      if (elicit === 'cancel') return { action: 'cancel' };
+      if (elicit === 'decline') return { action: 'decline' };
+      return { action: 'accept', content: { confirm: true } };
+    });
+  }
   await Promise.all([
     client.connect(clientTransport),
     server.connect(serverTransport),
   ]);
-  return client;
+  return Object.assign(client, { prompts });
 }
 
 async function callText(
@@ -294,6 +319,85 @@ describe('set_document', () => {
     });
     expect(result.isError).toBe(false);
     expect(fake.doc('fresh').text).toBe('first');
+  });
+
+  it('asks the user, and replaces once they accept', async () => {
+    // The point of the whole approval path: a client that can put a question in
+    // front of a person gets asked, instead of being handed a token that only
+    // proves the same call was made twice.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'old content');
+    const client = await connect(fake, {}, 'accept');
+
+    const result = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'new content',
+    });
+    expect(client.prompts).toHaveLength(1);
+    expect(result.isError).toBe(false);
+    expect(fake.doc('doc').text).toBe('new content');
+  });
+
+  it('changes nothing when the user declines', async () => {
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'old content');
+    const client = await connect(fake, {}, 'decline');
+
+    const result = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'new content',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('declined');
+    expect(fake.doc('doc').text).toBe('old content');
+  });
+
+  it('changes nothing when the user closes the dialog', async () => {
+    // Cancel is not a yes. It is the same verdict as a decline here, because
+    // the only safe reading of "no answer" for an irreversible write is no.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'old content');
+    const client = await connect(fake, {}, 'cancel');
+
+    const result = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'new content',
+    });
+    expect(result.isError).toBe(true);
+    expect(fake.doc('doc').text).toBe('old content');
+  });
+
+  it('offers no token to a client it can ask properly', async () => {
+    // The control that makes the test above mean something: without this, a
+    // server that silently never asked would pass everything else here, because
+    // the token path answers the same way it always did.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'old content');
+    const client = await connect(fake, {}, 'decline');
+
+    const result = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'new content',
+    });
+    expect(result.text).not.toContain('confirm_token=');
+  });
+
+  it('shows the sizes but never the pad content', async () => {
+    // Pads are world-writable and this string is read by a person and by a
+    // model. Character counts say enough to decide; the text itself does not
+    // belong in a dialog raised by whoever last edited the pad.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'secret words in the pad');
+    const client = await connect(fake, {}, 'decline');
+
+    await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'replacement',
+    });
+    const prompt = client.prompts[0] ?? '';
+    expect(prompt).toContain('doc');
+    expect(prompt).toContain('23 characters');
+    expect(prompt).not.toContain('secret words');
   });
 
   it('requires a confirm token to replace a non-empty pad', async () => {

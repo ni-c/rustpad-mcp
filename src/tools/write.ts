@@ -16,7 +16,7 @@ import {
 } from '../schema.js';
 
 import { assertDocumentId } from '../api.js';
-import { ConfirmationStore, confirmationPrompt } from 'mcp-approval';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import type { Config } from '../config.js';
 import { run, textResult, ToolInputError } from '../result.js';
 import { withSession, type WebSocketFactory } from '../session.js';
@@ -40,6 +40,7 @@ export function registerWriteTools(
   server: McpServer,
   config: Config,
   confirmations: ConfirmationStore,
+  approval: Approver,
   webSocketFactory?: WebSocketFactory
 ): void {
   server.registerTool(
@@ -112,7 +113,7 @@ export function registerWriteTools(
         openWorldHint: true,
       },
     },
-    async ({ id, text, confirm_token }) =>
+    async ({ id, text, confirm_token }, mcp) =>
       run(async () => {
         assertDocumentId(id);
         return withSession(config, id, webSocketFactory, async (session) => {
@@ -124,23 +125,32 @@ export function registerWriteTools(
           }
           const oldLength = codepointLength(oldText);
           if (oldLength > 0) {
-            // The token is bound to the replacement text as well as the pad:
-            // a confirmation obtained for one text must not execute another.
+            // The key is bound to the replacement text as well as the pad, so
+            // an approval obtained for one text cannot execute another.
             const fingerprint = createHash('sha256')
               .update(text)
               .digest('hex')
               .slice(0, 16);
-            const key = `set_document:${id}:${fingerprint}`;
-            if (!confirmations.consume(key, confirm_token)) {
-              return textResult(
-                confirmationPrompt({
-                  what: `replace the entire content of pad "${id}" (${oldLength} characters) with new content (${codepointLength(text)} characters)`,
-                  token: confirmations.issue(key),
-                  ttlMinutes: confirmations.ttlMinutes,
-                  consequence: 'The previous content cannot be restored.',
-                })
+            const outcome = await approval.requestApproval(
+              server,
+              mcp,
+              confirmations,
+              {
+                what: `replace the entire content of pad "${id}" (${oldLength} characters) with new content (${codepointLength(text)} characters)`,
+                consequence: 'The previous content cannot be restored.',
+                resourceKey: `set_document:${id}:${fingerprint}`,
+                token: confirm_token,
+                title: `Replace the contents of pad "${id}"?`,
+                hint: 'Tick to replace it, leave it to cancel.',
+                toolName: 'set_document',
+              }
+            );
+            if (outcome.decision === 'declined') {
+              throw new ToolInputError(
+                'rustpad-mcp: the user declined. The pad was not changed.'
               );
             }
+            if (outcome.decision === 'pending') return outcome.result;
           }
           const ops = replaceOps(oldLength, text);
           if (ops) await session.edit(ops);

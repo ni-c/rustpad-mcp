@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/server';
 
-import { ConfirmationStore } from 'mcp-approval';
+import { ConfirmationStore, createApproval } from 'mcp-approval';
 import { buildToolFilter, installToolFilter } from 'mcp-tool-allowlist';
 
 import { RustpadApi } from './api.js';
@@ -57,6 +57,9 @@ export function createServer(
 
   const api = new RustpadApi(config);
   const confirmations = new ConfirmationStore();
+  // One approver per server, because it holds the key that seals the request
+  // state carried through the client and back.
+  const approval = createApproval({ server: 'rustpad-mcp' });
 
   const server = new McpServer({
     name: 'rustpad-mcp',
@@ -72,7 +75,13 @@ export function createServer(
   // Read-only mode does not register the write tools at all. Rejecting them at
   // call time would still advertise capabilities the server refuses to provide.
   if (!config.readOnly) {
-    registerWriteTools(server, config, confirmations, options.webSocketFactory);
+    registerWriteTools(
+      server,
+      config,
+      confirmations,
+      approval,
+      options.webSocketFactory
+    );
   }
 
   return server;
