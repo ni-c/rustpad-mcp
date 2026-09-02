@@ -9,9 +9,16 @@
 # exactly why this must not listen on anything but loopback.
 services:
   rustpad:
-    # Overridable so the weekly CI run can point at a newer tag and report
-    # drift without changing what the PR gate tests.
-    image: ${RUSTPAD_IMAGE:-ekzhang/rustpad:latest}
+    # Pinned by **digest**, not by a version tag, because upstream publishes no
+    # version tags at all: `latest` is the only tag `ekzhang/rustpad` has ever
+    # had. A bare `:latest` default would leave this repository with no
+    # pin/drift split in either direction — the pull-request gate would float
+    # with whatever was pushed last, and the weekly run would ask a question it
+    # had already answered.
+    #
+    # Overridable so that weekly run can point at the moving `:latest` and
+    # report drift without changing what the gate tests.
+    image: ${RUSTPAD_IMAGE:-ekzhang/rustpad:latest@sha256:536b63883b2661f31de580df438427f2b799f9284bf9f908708ea3b5d231b585}
     environment:
       RUST_LOG: info
     ports:

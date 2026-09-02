@@ -126,7 +126,13 @@ jobs:
       - run: npm ci
       # The suite spawns dist/index.js, not src/. Building is not optional.
       - run: npm run build
-      - run: docker compose -f test/integration/compose.yml up -d --wait
+      - name: Start Rustpad
+        env:
+          # On the weekly run, against the moving `:latest` instead of the
+          # digest the gate pins. Upstream publishes no version tags, so this
+          # is the only form the drift question can take here.
+          RUSTPAD_IMAGE: ${{ github.event_name == 'schedule' && 'ekzhang/rustpad:latest' || '' }}
+        run: docker compose -f test/integration/compose.yml up -d --wait
       - run: npm run test:integration
       - if: failure()
         run: docker compose -f test/integration/compose.yml logs --tail=200
