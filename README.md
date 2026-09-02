@@ -7,6 +7,7 @@
 [![license](https://img.shields.io/npm/l/rustpad-mcp)](LICENSE)
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Frustpad--mcp-blue)](https://github.com/ni-c/rustpad-mcp/pkgs/container/rustpad-mcp)
 [![docs](https://img.shields.io/badge/docs-rustpad--mcp.ni--c.de-informational)](https://rustpad-mcp.ni-c.de)
+[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
@@ -44,6 +45,18 @@ never removes the guard. See
   <source media="(prefers-color-scheme: light)" srcset="https://rustpad-mcp.ni-c.de/architecture-light.svg" />
   <img alt="Architecture: an MCP client talks to rustpad-mcp over stdio; rustpad-mcp reads pads over HTTPS and writes them over the WebSocket OT protocol" src="https://rustpad-mcp.ni-c.de/architecture.svg" />
 </picture>
+
+## What makes it different
+
+**Real OT edits, not overwrites.** `append_to_document` and `replace_in_document`
+retain everything they do not touch, and the Rustpad server transforms concurrent
+edits — a human typing in the same pad at the same moment loses nothing. The model
+shows up in the pad as a named collaborator.
+
+**Built for an unauthenticated world.** Rustpad has no accounts, so every pad is
+untrusted by definition. Everything that comes out of one — reads, metadata, even
+upstream error bodies — is explicitly marked as data, never instructions, before a
+model sees it.
 
 ## Requirements
 
@@ -143,6 +156,36 @@ RUSTPAD_URL = "https://rustpad.example.net"
 docker run -i --rm -e RUSTPAD_URL=https://rustpad.example.net ghcr.io/ni-c/rustpad-mcp
 ```
 
+### Through mcp-hub
+
+A client that cannot spawn a local process — ChatGPT connectors, Claude on the web,
+Cursor, LibreChat — reaches rustpad-mcp through [mcp-hub](https://mcp-hub.ni-c.de): one
+container serves many stdio MCP servers over Streamable HTTP, with an OAuth 2.1 login
+behind a single password and long-lived tokens for the clients that cannot do OAuth. Its
+`/hub` endpoint puts every server behind six meta-tools, so one connector reaches all of
+them without N×tool schemas in the model's context, and it speaks both protocol revisions
+— a question this server asks travels through it to the person at the far end.
+
+Its `/config/mcp.json` uses Claude Code's format, so the entry is the one you already
+have:
+
+```json
+{
+  "mcpServers": {
+    "rustpad": {
+      "command": "npx",
+      "args": ["-y", "rustpad-mcp"],
+      "env": { "RUSTPAD_ALLOW_TOOLS": "essential" },
+      "denyTools": ["set_document"]
+    }
+  }
+}
+```
+
+`allowTools` and `denyTools` there are the hub's **own** per-server filter, which is not
+the same thing as `*_ALLOW_TOOLS` in `env` — the difference, and the mistake it invites,
+are in the [client guide](https://rustpad-mcp.ni-c.de/guide/clients#through-mcp-hub).
+
 ## Tools
 
 | Tool                     | Description                                                              |
@@ -189,6 +232,15 @@ The two read tools that report pad content carry `untrusted: true` and
 id, including text this server wrote earlier, and a client that reads the
 structured half would otherwise get it with no framing at all.
 
+## Not exposed, on purpose
+
+**No pad listing** — Rustpad has no such API. Pads exist implicitly under every
+id, so you have to know the ids you care about. `get_stats` reports how many
+documents the server currently holds, but not their names.
+
+**No accounts, no permissions.** Rustpad has neither, which is why every pad is
+treated as untrusted input rather than as something a login vouched for.
+
 ## Safety
 
 - Pad content is world-writable and therefore untrusted: every read result is
@@ -203,6 +255,11 @@ structured half would otherwise get it with no framing at all.
   they reach the model.
 - `RUSTPAD_INSECURE_TLS` relaxes certificate validation only for the
   configured connection, never process-wide.
+
+## Documentation
+
+The full guide, tool reference and security notes live at
+**[rustpad-mcp.ni-c.de](https://rustpad-mcp.ni-c.de)** (source in [`docs/`](docs/)).
 
 ## Development
 
@@ -232,6 +289,13 @@ provenance), pushes the multi-arch container image to GHCR, creates the GitHub
 release from the CHANGELOG section, and updates the entry in the official MCP
 registry.
 
+## Contributing
+
+Issues, discussions and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). For vulnerabilities please use
+[private reporting](https://github.com/ni-c/rustpad-mcp/security/advisories/new)
+rather than a public issue; the policy is in [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT © Willi Thiel
+[MIT](LICENSE) © Willi Thiel
