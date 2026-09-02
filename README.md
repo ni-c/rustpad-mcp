@@ -56,7 +56,7 @@ never removes the guard. See
 | Variable               | Required | Description                                                                        |
 | ---------------------- | -------- | ---------------------------------------------------------------------------------- |
 | `RUSTPAD_URL`          | yes      | Base URL of the instance, e.g. `https://rustpad.example.net`                       |
-| `RUSTPAD_READ_ONLY`    | no       | `true` registers only the read tools                                               |
+| `RUSTPAD_READ_ONLY`    | no       | `true`, `1` or `yes` registers only the read tools                                 |
 | `RUSTPAD_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection only)           |
 | `RUSTPAD_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset |
 | `RUSTPAD_DENY_TOOLS`   | no       | Same syntax; removed from whatever `RUSTPAD_ALLOW_TOOLS` left                      |

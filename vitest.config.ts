@@ -13,13 +13,13 @@ export default defineConfig({
       // Entry point: only wires config and server to the stdio transport and
       // exits the process; not reachable from unit tests.
       exclude: ['src/index.ts'],
-      // Just below the measured values (93.7/87.2/97.8/95.1 at the time of
+      // Just below the measured values (94.5/89.2/97.8/95.5 at the time of
       // writing) so a regression fails the run. Never lowered to go green.
       thresholds: {
-        statements: 92,
-        branches: 86,
+        statements: 93,
+        branches: 88,
         functions: 93,
-        lines: 94,
+        lines: 95,
       },
     },
   },

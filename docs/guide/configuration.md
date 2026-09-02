@@ -24,10 +24,19 @@ unencrypted. A malformed URL exits instead of limping along.
 
 ## Boolean semantics
 
-`RUSTPAD_READ_ONLY` and `RUSTPAD_INSECURE_TLS` compare against exactly the
-string `true`. `True`, `1` or `yes` count as **false** — deliberately strict,
-and the reason the server prints a banner on start when read-only or
-insecure-TLS mode is actually active.
+The two prefixed booleans are parsed in opposite directions, because their
+failure modes are not symmetric.
+
+`RUSTPAD_READ_ONLY` is a **protection**, so it is read leniently:
+`true`, `TRUE`, `1` and `yes` all switch it on, surrounding whitespace and all.
+Read strictly, `RUSTPAD_READ_ONLY=1` would register all five write tools
+against an instance the operator meant to protect, and nothing anywhere would
+report it.
+
+`RUSTPAD_INSECURE_TLS` **removes** one, so it compares against exactly the
+string `true`. `True` or `1` count as false there, which leaves certificate
+validation on — the harmless way to be wrong. The server prints a banner on
+start when insecure-TLS mode is actually active.
 
 `ELICITATION` is the exception, in both directions: it is case-insensitive, and
 a value that is neither `true` nor `false` **stops the server** instead of

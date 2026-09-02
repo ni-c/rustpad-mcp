@@ -63,3 +63,5 @@ configured connection, via a scoped dispatcher — never process-wide, and
 
 `RUSTPAD_READ_ONLY=true` does not "block" the write tools — it does not
 register them, so the connection never advertises capabilities it would refuse.
+`1` and `yes` mean the same thing: a switch that protects something is read
+leniently, so a typo cannot silently unlock what it was set to lock.

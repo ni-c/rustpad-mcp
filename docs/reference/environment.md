@@ -18,8 +18,10 @@ setup instructions (so registries and inspectors can introspect it).
 
 ## RUSTPAD_READ_ONLY
 
-Compared against exactly the string `true`. When active, the five write tools
-are not registered at all — the connection never advertises them.
+`true`, `TRUE`, `1` or `yes`, with surrounding whitespace ignored. Read
+leniently on purpose: this switch is a protection, and a typo that silently
+registered the write tools would never be reported. When active, the five write
+tools are not registered at all — the connection never advertises them.
 
 ## RUSTPAD_INSECURE_TLS
 
