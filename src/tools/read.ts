@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { assertDocumentId, type RustpadApi } from '../api.js';
 import type { Config } from '../config.js';
 import { codepointLength } from '../ot.js';
+import { assertConfirmedEmpty } from '../pad-state.js';
 import { jsonResult, run, textResult, untrustedResult } from '../result.js';
 import { documentIdParam } from '../schema.js';
 import { withSession, type WebSocketFactory } from '../session.js';
@@ -73,6 +74,13 @@ export function registerReadTools(
         assertDocumentId(id);
         return withSession(config, id, webSocketFactory, async (session) => {
           const { state } = session;
+          // Reporting `length_characters: 0` for a full pad is the read-side
+          // face of the same ambiguity the write tools guard against: no
+          // History message means either "empty" or "not here yet". A number a
+          // model will act on has to be a fact, so the second channel decides.
+          if (state.text === '') {
+            await assertConfirmedEmpty(api, session, id);
+          }
           // Through untrustedResult, not jsonResult: `language` and the user
           // names are free text chosen by arbitrary clients of the instance.
           return untrustedResult({

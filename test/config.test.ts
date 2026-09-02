@@ -135,20 +135,46 @@ describe('loadConfig', () => {
     expect(error).not.toHaveBeenCalled();
   });
 
-  it('treats the booleans as exactly "true"', () => {
+  describe('RUSTPAD_READ_ONLY', () => {
     const base = { RUSTPAD_URL: 'https://rustpad.example.net' };
-    expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: 'true' }).readOnly).toBe(
-      true
-    );
-    expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: 'True' }).readOnly).toBe(
-      false
-    );
-    expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: '1' }).readOnly).toBe(
-      false
-    );
+
+    it('accepts every spelling an operator plausibly means by "on"', () => {
+      // Parsed leniently on purpose, and not for convenience. This switch is
+      // the difference between three tools and eight against an instance with
+      // no authentication of its own; read strictly, `RUSTPAD_READ_ONLY=1`
+      // would register every write tool and nothing would ever report it.
+      for (const raw of ['true', 'True', 'TRUE', ' true ', '1', 'yes', 'YES']) {
+        expect(
+          loadConfig({ ...base, RUSTPAD_READ_ONLY: raw }).readOnly,
+          raw
+        ).toBe(true);
+      }
+    });
+
+    it('stays off when unset or empty', () => {
+      expect(loadConfig(base).readOnly).toBe(false);
+      expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: '  ' }).readOnly).toBe(
+        false
+      );
+      expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: 'false' }).readOnly).toBe(
+        false
+      );
+    });
+  });
+
+  it('reads RUSTPAD_INSECURE_TLS as exactly "true"', () => {
+    // The opposite direction from RUSTPAD_READ_ONLY, deliberately: this one
+    // removes a protection, so a typo has to leave certificate validation on.
+    const base = { RUSTPAD_URL: 'https://rustpad.example.net' };
     expect(
       loadConfig({ ...base, RUSTPAD_INSECURE_TLS: 'true' }).insecureTls
     ).toBe(true);
+    expect(loadConfig({ ...base, RUSTPAD_INSECURE_TLS: '1' }).insecureTls).toBe(
+      false
+    );
+    expect(
+      loadConfig({ ...base, RUSTPAD_INSECURE_TLS: 'True' }).insecureTls
+    ).toBe(false);
   });
 });
 

@@ -82,8 +82,15 @@ export function parseElicitation(raw: string | undefined): boolean {
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const url = env.RUSTPAD_URL;
+  // Exactly "true", because this one *removes* a protection: an operator who
+  // typed RUSTPAD_INSECURE_TLS=1 gets certificate validation, which is the
+  // harmless way to be wrong.
   const insecureTls = env.RUSTPAD_INSECURE_TLS === 'true';
-  const readOnly = env.RUSTPAD_READ_ONLY === 'true';
+  // Tolerant, because this one *is* a protection and the failure directions
+  // are not symmetric: RUSTPAD_READ_ONLY=1 read strictly would register all
+  // five write tools against an instance the operator meant to protect, and
+  // nothing would ever say so. "1", "yes" and "TRUE" all mean on.
+  const readOnly = /^(1|true|yes)$/i.test(env.RUSTPAD_READ_ONLY?.trim() ?? '');
   const elicitation = parseElicitation(env.ELICITATION);
   const allowTools = env.RUSTPAD_ALLOW_TOOLS;
   const denyTools = env.RUSTPAD_DENY_TOOLS;

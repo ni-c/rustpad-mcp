@@ -1,4 +1,4 @@
-import { createHash, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
@@ -15,13 +15,11 @@ import {
   wellFormed,
 } from '../schema.js';
 
-import { assertDocumentId } from '../api.js';
-import {
-  setResourceKey,
-  type Approver,
-  type ConfirmationStore,
-} from 'mcp-approval';
+import { assertDocumentId, type RustpadApi } from '../api.js';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import type { Config } from '../config.js';
+import { assertConfirmedEmpty } from '../pad-state.js';
+import { contentFingerprint, tupleResourceKey } from '../resource-key.js';
 import { run, textResult, ToolInputError } from '../result.js';
 import { withSession, type WebSocketFactory } from '../session.js';
 import { EPHEMERAL_NOTE, shareUrl } from './read.js';
@@ -42,6 +40,7 @@ function randomDocumentId(): string {
 
 export function registerWriteTools(
   server: McpServer,
+  api: RustpadApi,
   config: Config,
   confirmations: ConfirmationStore,
   approval: Approver,
@@ -86,6 +85,10 @@ export function registerWriteTools(
                 `pad "${documentId}" already has content — use set_document to replace it or append_to_document to add to it`
               );
             }
+            // The refusal above only means something if "empty" is a fact
+            // rather than the absence of a message; without this the guard
+            // lapses on exactly the connections where the history was slow.
+            await assertConfirmedEmpty(api, session, documentId);
             if (text !== undefined && text !== '') {
               const ops = replaceOps(0, text);
               if (ops) await session.edit(ops);
@@ -134,6 +137,12 @@ export function registerWriteTools(
         assertDocumentId(id);
         return withSession(config, id, webSocketFactory, async (session) => {
           const oldText = session.state.text;
+          // Before anything is decided on it: an empty pad is the one state
+          // that skips the dialog entirely, so it has to be established rather
+          // than inferred from a History message that had not arrived yet.
+          if (oldText === '') {
+            await assertConfirmedEmpty(api, session, id);
+          }
           if (oldText === text) {
             return textResult(
               `The pad "${id}" already has exactly this content — nothing to do.`
@@ -141,12 +150,6 @@ export function registerWriteTools(
           }
           const oldLength = codepointLength(oldText);
           if (oldLength > 0) {
-            // The key is bound to the replacement text as well as the pad, so
-            // an approval obtained for one text cannot execute another.
-            const fingerprint = createHash('sha256')
-              .update(text)
-              .digest('hex')
-              .slice(0, 16);
             const outcome = await approval.requestApproval(
               server,
               mcp,
@@ -154,7 +157,19 @@ export function registerWriteTools(
               {
                 what: `replace the entire content of pad "${id}" (${oldLength} characters) with new content (${codepointLength(text)} characters)`,
                 consequence: 'The previous content cannot be restored.',
-                resourceKey: `set_document:${id}:${fingerprint}`,
+                // Bound to the pad, to the content that is about to be
+                // destroyed, and to the replacement — in that order, so a
+                // swapped pair is a different key. Binding the old content is
+                // what makes the approval expire with the fact it was given
+                // about: up to five minutes pass between the dialog and the
+                // second call, Rustpad has no authentication, and an approval
+                // read out as "(14 characters)" must not still execute against
+                // the 40 kB a colleague pasted in the meantime.
+                resourceKey: tupleResourceKey('set_document', [
+                  id,
+                  contentFingerprint(oldText),
+                  contentFingerprint(text),
+                ]),
                 token: confirm_token,
                 title: `Replace the contents of pad "${id}"?`,
                 hint: 'Tick to replace it, leave it to cancel.',
@@ -211,6 +226,13 @@ export function registerWriteTools(
         assertDocumentId(id);
         return withSession(config, id, webSocketFactory, async (session) => {
           const oldLength = codepointLength(session.state.text);
+          if (oldLength === 0) {
+            // An append at revision 0 is a plain insertion, which the server
+            // transforms to sit *before* everything it already holds. Believing
+            // an unconfirmed "empty" here does not lose text, it silently puts
+            // the new text at the top of the pad and reports an append.
+            await assertConfirmedEmpty(api, session, id);
+          }
           const ops = appendOps(oldLength, text);
           if (ops) await session.edit(ops);
           return textResult(
@@ -301,10 +323,13 @@ export function registerWriteTools(
                   'What is replaced cannot be restored, and a search string ' +
                   'that is shorter than intended matches in places nobody ' +
                   'looked at.',
-                // Bound to the pad, the exact pair and the number of matches:
-                // an approval for two occurrences does not execute against a
-                // pad that has since grown a third.
-                resourceKey: setResourceKey('replace_in_document', [
+                // Bound to the pad, the exact pair *in order*, and the number
+                // of matches: an approval for two occurrences does not execute
+                // against a pad that has since grown a third, and one for
+                // "DEV → PROD" does not execute "PROD → DEV". The order is why
+                // this is not the library's `setResourceKey` — see
+                // src/resource-key.ts.
+                resourceKey: tupleResourceKey('replace_in_document', [
                   id,
                   search,
                   replace,

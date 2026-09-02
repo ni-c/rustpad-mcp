@@ -19,8 +19,8 @@ import { bootstrap, padId, type Sandbox } from './bootstrap.js';
  * understood it — against a fake that the same author wrote to that same
  * understanding. Only a real Rustpad can disagree, and the place it can
  * disagree is the one that has already bitten once: OT offsets are measured in
- * **UTF-16 code units**, so anything outside the basic plane shifts every
- * later edit if the server counts wrongly.
+ * **Unicode code points**, not UTF-16 code units, so anything outside the basic
+ * plane shifts every later edit if the two are mixed up.
  */
 
 let sandbox: Sandbox;
@@ -123,12 +123,15 @@ describe('a document through its whole life', () => {
   });
 });
 
-describe('offsets are UTF-16 code units, against a real Rustpad', () => {
+describe('offsets are Unicode code points, against a real Rustpad', () => {
   // The bug this repository already had once, and the only place a fake can
-  // agree with a wrong implementation forever. An emoji is two UTF-16 code
-  // units and one code point; if the server counts code points, every edit
-  // after the emoji lands one unit early and the document silently corrupts.
-  const id = padId('utf16');
+  // agree with a wrong implementation forever. An emoji is one code point and
+  // two UTF-16 code units; Rustpad counts code points, so an implementation
+  // that reached for `String.length` would put every edit after the emoji one
+  // unit late and corrupt the document silently. `src/ot.ts` counts code
+  // points, and these assertions are what says so against the real server —
+  // read them before "fixing" that file in the other direction.
+  const id = padId('codepoints');
 
   it('appends after an emoji without shifting anything', async () => {
     await asking.call('create_document', { id, text: 'a😀b' });
@@ -194,7 +197,11 @@ describe('the fallback path for a client with no dialog', () => {
     await plain.call(
       'set_document',
       { id, text: 'something else\n', confirm_token: tokenOf(refusal) },
-      { expectError: true }
+      // The reason, not merely "it failed". A bare `expectError: true` is
+      // satisfied by an expired token, an evicted store entry or a renamed
+      // parameter just as well as by the guard this test is named after, so
+      // the guard could be gone and this would stay green.
+      { expectError: 'issued for different arguments' }
     );
     expect(await readBack(id)).toBe('rewritten\n');
   });

@@ -80,6 +80,7 @@ export function createServer(
   if (!config.readOnly) {
     registerWriteTools(
       server,
+      api,
       config,
       confirmations,
       approval,

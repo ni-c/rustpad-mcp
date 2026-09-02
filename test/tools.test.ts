@@ -240,6 +240,7 @@ describe('get_document_info', () => {
 describe('create_document', () => {
   it('creates a pad with content and language and returns the URL', async () => {
     const fake = new FakeRustpad();
+    mockFetch('');
     const client = await connect(fake);
     const result = await callText(client, 'create_document', {
       text: 'hello',
@@ -255,6 +256,7 @@ describe('create_document', () => {
 
   it('honours a requested id', async () => {
     const fake = new FakeRustpad();
+    mockFetch('');
     const client = await connect(fake);
     const result = await callText(client, 'create_document', {
       id: 'my-pad',
@@ -281,6 +283,9 @@ describe('create_document', () => {
 describe('set_document', () => {
   it('writes an empty pad without confirmation', async () => {
     const fake = new FakeRustpad();
+    // The HTTP endpoint agrees the pad is empty, which is what makes skipping
+    // the dialog legitimate rather than lucky.
+    mockFetch('');
     const client = await connect(fake);
     const result = await callText(client, 'set_document', {
       id: 'fresh',
@@ -432,6 +437,37 @@ describe('set_document', () => {
     expect(fake.doc('b').text).toBe('bbb');
   });
 
+  it('does not accept a token once the pad has changed underneath it', async () => {
+    // The approval names what it destroys — "(14 characters)" — and up to five
+    // minutes pass before the second call. Rustpad has no authentication, so a
+    // colleague pasting 40 kB in between is the ordinary case, not the exotic
+    // one. Binding only the replacement text would honour the old token and
+    // delete text nobody was ever shown.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'TODO: buy milk');
+    const client = await connect(fake);
+
+    const first = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'done',
+    });
+    expect(first.text).toContain('14 characters');
+
+    fake.externalEdit('doc', [
+      14,
+      '\n… and forty kilobytes of somebody else’s notes',
+    ]);
+
+    const stale = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'done',
+      confirm_token: tokenOf(first.text),
+    });
+    expect(stale.isError).toBe(true);
+    expect(stale.text).toContain('issued for different arguments');
+    expect(fake.doc('doc').text).toContain('somebody else');
+  });
+
   it('does nothing when the content is already identical', async () => {
     const fake = new FakeRustpad();
     fake.seed('doc', 'same');
@@ -461,6 +497,7 @@ describe('append_to_document', () => {
 
   it('starts an empty pad', async () => {
     const fake = new FakeRustpad();
+    mockFetch('');
     const client = await connect(fake);
     await callText(client, 'append_to_document', { id: 'doc', text: 'go' });
     expect(fake.doc('doc').text).toBe('go');
@@ -468,6 +505,7 @@ describe('append_to_document', () => {
 
   it('strips unexpected arguments instead of forwarding them', async () => {
     const fake = new FakeRustpad();
+    mockFetch('');
     const client = await connect(fake);
     const result = await callText(client, 'append_to_document', {
       id: 'doc',
@@ -600,7 +638,7 @@ describe('replace_in_document', () => {
     expect(fake.doc('doc').text).toBe('z b z b z');
   });
 
-  it('does not accept a token issued for a different pair', async () => {
+  it('does not accept a token issued for a different replacement', async () => {
     const fake = new FakeRustpad();
     fake.seed('doc', 'a b a b a');
     const client = await connect(fake);
@@ -610,16 +648,49 @@ describe('replace_in_document', () => {
       replace: 'z',
       replace_all: true,
     });
-    const swapped = await callText(client, 'replace_in_document', {
+    const changed = await callText(client, 'replace_in_document', {
       id: 'doc',
       search: 'a',
       replace: '',
       replace_all: true,
       confirm_token: tokenOf(first.text),
     });
+    expect(changed.isError).toBe(true);
+    expect(changed.text).toContain('issued for different arguments');
+    expect(fake.doc('doc').text).toBe('a b a b a');
+  });
+
+  it('does not accept a token with search and replace swapped', async () => {
+    // The case a sorted key cannot see, and the reason this server does not use
+    // the library's `setResourceKey` here. `search` and `replace` come from the
+    // same vocabulary, so sorting the targets makes ("DEV" → "PROD") and
+    // ("PROD" → "DEV") one and the same approval — and on a pad where both
+    // occur equally often the match count agrees as well. The pad is
+    // world-writable, so an attacker can arrange exactly that.
+    const fake = new FakeRustpad();
+    fake.seed('cfg', 'host=PROD\nname=PROD\nlog=DEV\ntmp=DEV\n');
+    const client = await connect(fake);
+
+    const approved = await callText(client, 'replace_in_document', {
+      id: 'cfg',
+      search: 'DEV',
+      replace: 'PROD',
+      replace_all: true,
+    });
+    expect(approved.text).toContain('2 occurrences');
+
+    const swapped = await callText(client, 'replace_in_document', {
+      id: 'cfg',
+      search: 'PROD',
+      replace: 'DEV',
+      replace_all: true,
+      confirm_token: tokenOf(approved.text),
+    });
     expect(swapped.isError).toBe(true);
     expect(swapped.text).toContain('issued for different arguments');
-    expect(fake.doc('doc').text).toBe('a b a b a');
+    expect(fake.doc('cfg').text).toBe(
+      'host=PROD\nname=PROD\nlog=DEV\ntmp=DEV\n'
+    );
   });
 
   it('takes the switch off the dialog and onto the token', async () => {
@@ -681,6 +752,106 @@ describe('replace_in_document', () => {
     });
     expect(result.isError).toBe(false);
     expect(fake.doc('doc').text).toBe('hello rustpad!!!');
+  });
+});
+
+describe('a pad whose history arrives after the settle window', () => {
+  // The whole point of this block: on the socket, "this pad is empty" and "the
+  // history is not here yet" are the same silence, because Rustpad sends no
+  // History for a pad that was never written. Every guard that keys off an
+  // empty pad is therefore timing-dependent — present in every test, absent on
+  // a slow instance, a database restore or behind a buffering proxy. The HTTP
+  // endpoint is asked as a second opinion, and these tests are what a fake
+  // that answers synchronously can never show.
+
+  /** A pad the socket will report as empty for longer than settle waits. */
+  function slowPad(content: string): FakeRustpad {
+    const fake = new FakeRustpad();
+    fake.seed('doc', content);
+    fake.historyDelayMs = 600; // DEFAULT_LIMITS.settleIdleMs is 300
+    mockFetch(content);
+    return fake;
+  }
+
+  it('does not let set_document skip the confirmation', async () => {
+    const fake = slowPad('the whole quarterly report');
+    const client = await connect(fake);
+    const result = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'gone',
+    });
+    // Without the second channel this call succeeds: no dialog, no token, and
+    // an edit at revision 0 that the server transforms to sit *beside* the
+    // report rather than replacing it — while the reply says "0 → 4 characters".
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('could not be confirmed');
+    expect(fake.doc('doc').text).toBe('the whole quarterly report');
+  });
+
+  it('does not let create_document write over it', async () => {
+    const fake = slowPad('someone else is working here');
+    const client = await connect(fake);
+    const result = await callText(client, 'create_document', {
+      id: 'doc',
+      text: 'mine now',
+    });
+    expect(result.isError).toBe(true);
+    expect(fake.doc('doc').text).toBe('someone else is working here');
+  });
+
+  it('does not let append_to_document put the text at the top', async () => {
+    // An append at revision 0 is a bare insertion, which the server transforms
+    // to position 0. No error, no warning, and the reply calls it an append.
+    const fake = slowPad('first line\n');
+    const client = await connect(fake);
+    const result = await callText(client, 'append_to_document', {
+      id: 'doc',
+      text: 'second line\n',
+    });
+    expect(result.isError).toBe(true);
+    expect(fake.doc('doc').text).toBe('first line\n');
+  });
+
+  it('does not let get_document_info report a full pad as empty', async () => {
+    const fake = slowPad('plenty of text in here');
+    const client = await connect(fake);
+    const result = await callText(client, 'get_document_info', { id: 'doc' });
+    expect(result.isError).toBe(true);
+    expect(result.text).not.toContain('"length_characters": 0');
+  });
+
+  it('asks nobody about a pad that was emptied rather than never written', async () => {
+    // The distinction the flag draws, and why it is not simply "is the text
+    // empty". A pad somebody typed into and then cleared *has* a history, so
+    // its empty text is a fact the server stated rather than a silence — and
+    // the second channel is not consulted at all.
+    const fake = new FakeRustpad();
+    fake.seed('doc', 'abc');
+    fake.externalEdit('doc', [-3]);
+    const fetchSpy = mockFetch('should never be read');
+    const client = await connect(fake);
+    const result = await callText(client, 'set_document', {
+      id: 'doc',
+      text: 'starting over',
+    });
+    expect(result.isError).toBe(false);
+    expect(fake.doc('doc').text).toBe('starting over');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still writes a pad both channels agree is empty', async () => {
+    // The control. A guard that refused whenever the history was quiet would
+    // pass every test above and break the ordinary case of a brand-new pad.
+    const fake = new FakeRustpad();
+    fake.historyDelayMs = 600;
+    mockFetch('');
+    const client = await connect(fake);
+    const result = await callText(client, 'set_document', {
+      id: 'brand-new',
+      text: 'hello',
+    });
+    expect(result.isError).toBe(false);
+    expect(fake.doc('brand-new').text).toBe('hello');
   });
 });
 

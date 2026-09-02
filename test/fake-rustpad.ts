@@ -92,6 +92,18 @@ export class FakeRustpad {
   failNextConnection = false;
   /** When set, the server drops the connection instead of answering an edit. */
   closeOnEdit = false;
+  /**
+   * Milliseconds by which the initial History message trails the rest of the
+   * burst. Zero — a healthy local instance — is the default.
+   *
+   * Anything past `settleIdleMs` reproduces the one thing the socket cannot
+   * express: Rustpad sends no History at all for a pad that was never written,
+   * so a History that is merely *late* is indistinguishable from an empty pad.
+   * A slow instance, a database restore, a buffering proxy or round-trip time
+   * plus a TLS handshake all produce it, and every test written against the
+   * synchronous burst has the guard present by accident.
+   */
+  historyDelayMs = 0;
   /** Hook that runs when a client announces itself, before any edit. */
   onClientInfo: ((docId: string) => void) | undefined;
   /** Sockets currently open, by doc id, for broadcasting external edits. */
@@ -185,10 +197,19 @@ class FakeSocket implements WebSocketLike {
       this.emit('open', {});
       const doc = this.server.doc(this.docId);
       this.emitMessage({ Identity: this.identity });
-      if (doc.operations.length > 0) {
-        this.emitMessage({
-          History: { start: 0, operations: doc.operations },
-        });
+      const history = () => {
+        if (doc.operations.length > 0) {
+          this.emitMessage({
+            History: { start: 0, operations: doc.operations },
+          });
+        }
+      };
+      if (this.server.historyDelayMs > 0) {
+        // Unref: a delayed frame that arrives after the session closed must
+        // not keep the test process alive.
+        setTimeout(history, this.server.historyDelayMs).unref?.();
+      } else {
+        history();
       }
       if (doc.language !== undefined) {
         this.emitMessage({ Language: doc.language });
