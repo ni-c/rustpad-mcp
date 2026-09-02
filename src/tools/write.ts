@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
   appendOps,
@@ -20,7 +20,7 @@ import type { Approver, ConfirmationStore } from 'mcp-approval';
 import type { Config } from '../config.js';
 import { assertConfirmedEmpty } from '../pad-state.js';
 import { contentFingerprint, tupleResourceKey } from '../resource-key.js';
-import { run, textResult, ToolInputError } from '../result.js';
+import { run, ToolInputError } from '../result.js';
 import { withSession, type WebSocketFactory } from '../session.js';
 import { EPHEMERAL_NOTE, shareUrl } from './read.js';
 
@@ -37,6 +37,34 @@ function randomDocumentId(): string {
   }
   return id;
 }
+
+/**
+ * What a write answers with.
+ *
+ * These tools used to answer with a sentence — "Appended 12 characters to pad
+ * …". A sentence is what a person reads; `characters` and `url` are what a
+ * caller acts on, and parsing them back out of prose is what declaring an
+ * output schema exists to stop. The sentence stays, in the text block.
+ */
+function sentenceResult(
+  sentence: string,
+  value: Record<string, unknown>
+): CallToolResult {
+  return {
+    content: [{ type: 'text', text: sentence }],
+    structuredContent: value,
+  };
+}
+
+const writeOutcome = z.object({
+  id: z.string(),
+  url: z.string().describe('Shareable; anyone with it can read and edit.'),
+  characters: z
+    .number()
+    .int()
+    .describe('Length of the pad after the write, in codepoints.'),
+  note: z.string(),
+});
 
 export function registerWriteTools(
   server: McpServer,
@@ -71,6 +99,10 @@ export function registerWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: writeOutcome.extend({
+        created: z.literal(true),
+        language: z.string().optional(),
+      }),
     },
     async ({ id, text, language }) =>
       run(async () => {
@@ -96,12 +128,19 @@ export function registerWriteTools(
             if (language !== undefined) {
               await session.setLanguage(language);
             }
-            const wrote =
-              text !== undefined && text !== ''
-                ? ` with ${codepointLength(text)} characters`
-                : '';
-            return textResult(
-              `Created pad "${documentId}"${wrote}.\nURL: ${shareUrl(config, documentId)}\n${EPHEMERAL_NOTE}`
+            const written =
+              text !== undefined && text !== '' ? codepointLength(text) : 0;
+            const wrote = written > 0 ? ` with ${written} characters` : '';
+            return sentenceResult(
+              `Created pad "${documentId}"${wrote}.\nURL: ${shareUrl(config, documentId)}\n${EPHEMERAL_NOTE}`,
+              {
+                id: documentId,
+                url: shareUrl(config, documentId),
+                created: true,
+                characters: written,
+                ...(language === undefined ? {} : { language }),
+                note: EPHEMERAL_NOTE,
+              }
             );
           }
         );
@@ -131,6 +170,12 @@ export function registerWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: writeOutcome.extend({
+        characters_before: z.number().int(),
+        changed: z
+          .boolean()
+          .describe('False when the pad already held exactly this content.'),
+      }),
     },
     async ({ id, text, confirm_token }, mcp) =>
       run(async () => {
@@ -144,8 +189,16 @@ export function registerWriteTools(
             await assertConfirmedEmpty(api, session, id);
           }
           if (oldText === text) {
-            return textResult(
-              `The pad "${id}" already has exactly this content — nothing to do.`
+            return sentenceResult(
+              `The pad "${id}" already has exactly this content — nothing to do.`,
+              {
+                id,
+                url: shareUrl(config, id),
+                changed: false,
+                characters_before: codepointLength(oldText),
+                characters: codepointLength(oldText),
+                note: 'Nothing was written.',
+              }
             );
           }
           const oldLength = codepointLength(oldText);
@@ -193,8 +246,16 @@ export function registerWriteTools(
           }
           const ops = replaceOps(oldLength, text);
           if (ops) await session.edit(ops);
-          return textResult(
-            `Replaced the content of pad "${id}" (${oldLength} → ${codepointLength(text)} characters).\nURL: ${shareUrl(config, id)}`
+          return sentenceResult(
+            `Replaced the content of pad "${id}" (${oldLength} → ${codepointLength(text)} characters).\nURL: ${shareUrl(config, id)}`,
+            {
+              id,
+              url: shareUrl(config, id),
+              changed: true,
+              characters_before: oldLength,
+              characters: codepointLength(text),
+              note: EPHEMERAL_NOTE,
+            }
           );
         });
       })
@@ -220,6 +281,9 @@ export function registerWriteTools(
         idempotentHint: false,
         openWorldHint: false,
       },
+      outputSchema: writeOutcome.extend({
+        appended_characters: z.number().int(),
+      }),
     },
     async ({ id, text }) =>
       run(async () => {
@@ -235,8 +299,15 @@ export function registerWriteTools(
           }
           const ops = appendOps(oldLength, text);
           if (ops) await session.edit(ops);
-          return textResult(
-            `Appended ${codepointLength(text)} characters to pad "${id}" (now ${oldLength + codepointLength(text)} characters).\nURL: ${shareUrl(config, id)}`
+          return sentenceResult(
+            `Appended ${codepointLength(text)} characters to pad "${id}" (now ${oldLength + codepointLength(text)} characters).\nURL: ${shareUrl(config, id)}`,
+            {
+              id,
+              url: shareUrl(config, id),
+              appended_characters: codepointLength(text),
+              characters: oldLength + codepointLength(text),
+              note: EPHEMERAL_NOTE,
+            }
           );
         });
       })
@@ -280,6 +351,9 @@ export function registerWriteTools(
         idempotentHint: false,
         openWorldHint: false,
       },
+      outputSchema: writeOutcome.extend({
+        replacements: z.number().int(),
+      }),
     },
     async ({ id, search, replace, replace_all, confirm_token }, mcp) =>
       run(async () => {
@@ -356,8 +430,15 @@ export function registerWriteTools(
             if (outcome.decision === 'pending') return outcome.result;
           }
           await session.edit(ops);
-          return textResult(
-            `Replaced ${count} occurrence${count === 1 ? '' : 's'} in pad "${id}".\nURL: ${shareUrl(config, id)}`
+          return sentenceResult(
+            `Replaced ${count} occurrence${count === 1 ? '' : 's'} in pad "${id}".\nURL: ${shareUrl(config, id)}`,
+            {
+              id,
+              url: shareUrl(config, id),
+              replacements: count,
+              characters: codepointLength(session.state.text),
+              note: EPHEMERAL_NOTE,
+            }
           );
         });
       })
@@ -380,13 +461,23 @@ export function registerWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: writeOutcome.extend({ language: z.string() }),
     },
     async ({ id, language }) =>
       run(async () => {
         assertDocumentId(id);
         return withSession(config, id, webSocketFactory, async (session) => {
           await session.setLanguage(language);
-          return textResult(`Set the language of pad "${id}" to ${language}.`);
+          return sentenceResult(
+            `Set the language of pad "${id}" to ${language}.`,
+            {
+              id,
+              url: shareUrl(config, id),
+              language,
+              characters: codepointLength(session.state.text),
+              note: EPHEMERAL_NOTE,
+            }
+          );
         });
       })
   );

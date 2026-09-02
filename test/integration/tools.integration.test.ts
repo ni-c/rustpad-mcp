@@ -1,4 +1,5 @@
 import {
+  expectEveryToolDeclaresOutputSchema,
   expectEveryToolExercised,
   startServer,
   toolCoverage,
@@ -175,10 +176,14 @@ describe('the fallback path for a client with no dialog', () => {
   it('takes the two-call token instead', async () => {
     await plain.call('create_document', { id, text: 'original\n' });
 
-    const refusal = await plain.call('set_document', {
-      id,
-      text: 'rewritten\n',
-    });
+    // An error result: the pad was not changed, which is what `isError` says
+    // — and a tool that declares an `outputSchema` may not answer without
+    // `structuredContent` unless the result is an error.
+    const refusal = await plain.call(
+      'set_document',
+      { id, text: 'rewritten\n' },
+      { expectError: /confirm_token=/ }
+    );
     expect(refusal).toContain('confirm_token');
     expect(plain.prompts).toHaveLength(0);
     // Nothing happened yet: the first call is a question, not a write.
@@ -193,7 +198,11 @@ describe('the fallback path for a client with no dialog', () => {
   });
 
   it('refuses a token issued for different replacement text', async () => {
-    const refusal = await plain.call('set_document', { id, text: 'one\n' });
+    const refusal = await plain.call(
+      'set_document',
+      { id, text: 'one\n' },
+      { expectError: /confirm_token=/ }
+    );
     await plain.call(
       'set_document',
       { id, text: 'something else\n', confirm_token: tokenOf(refusal) },
@@ -210,6 +219,15 @@ describe('the fallback path for a client with no dialog', () => {
     expect(asking.prompts.length).toBeGreaterThan(0);
     expect(plain.prompts).toHaveLength(0);
   });
+});
+
+it('declares an output schema on every tool', async () => {
+  // The unit suite checks the same thing against a fake. Here it is checked
+  // against the server that has just answered every one of these tools against
+  // a real Rustpad — and each of those answers went through the SDK's
+  // validation against the schema below it.
+  const { tools } = await asking.client.listTools();
+  expectEveryToolDeclaresOutputSchema(tools);
 });
 
 it('exercises every tool in the catalogue', () => {

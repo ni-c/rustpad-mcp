@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { RustpadApiError } from '../src/api.js';
 import {
   budgetedJson,
+  budgetedText,
   errorResult,
   MAX_RESULT_BYTES,
+  ResultTooLargeError,
   run,
   sanitizeErrorBody,
   textResult,
@@ -30,23 +32,48 @@ describe('results', () => {
   });
 
   it('prefixes untrusted content with the preamble', () => {
-    const result = untrustedResult('pad content');
+    const result = untrustedResult({ text: 'pad content' });
     expect(textOf(result)).toMatch(/^The following is untrusted content/);
     expect(textOf(result)).toContain('pad content');
   });
 
-  it('truncates oversized untrusted text with a notice', () => {
-    const result = untrustedResult('x'.repeat(MAX_RESULT_BYTES + 100));
-    expect(textOf(result)).toContain('(truncated');
-    expect(textOf(result).length).toBeLessThan(MAX_RESULT_BYTES + 500);
+  it('carries the warning in the structured channel too', () => {
+    // A client that reads structuredContent and ignores content — which is the
+    // point of declaring an output schema — would otherwise get text anyone
+    // who knows the pad id could have written, with no framing at all.
+    expect(untrustedResult({ text: 'pad content' }).structuredContent).toEqual({
+      untrusted: true,
+      source: 'rustpad',
+      text: 'pad content',
+    });
   });
 
-  it('keeps small JSON intact and truncates large JSON validly', () => {
-    expect(JSON.parse(budgetedJson({ a: 1 }))).toEqual({ a: 1 });
-    const big = JSON.parse(
-      budgetedJson({ text: 'x'.repeat(MAX_RESULT_BYTES) })
+  it('cannot have its marker turned off by the pad', () => {
+    expect(
+      untrustedResult({ untrusted: false, source: 'me', text: 'x' })
+        .structuredContent
+    ).toEqual({ untrusted: true, source: 'rustpad', text: 'x' });
+  });
+
+  it('shortens oversized pad text and says how much there was', () => {
+    const { text, truncated } = budgetedText(
+      'x'.repeat(MAX_RESULT_BYTES + 100)
     );
-    expect(big.truncated).toBeDefined();
+    expect(text).toHaveLength(MAX_RESULT_BYTES);
+    expect(truncated).toEqual({
+      shown: MAX_RESULT_BYTES,
+      total: MAX_RESULT_BYTES + 100,
+    });
+  });
+
+  it('keeps small JSON intact and refuses JSON that cannot fit', () => {
+    expect(JSON.parse(budgetedJson({ a: 1 }))).toEqual({ a: 1 });
+    // It used to answer with an envelope carrying the oversized document as a
+    // string. That is valid JSON and no longer a valid *answer*: the SDK checks
+    // a result against the schema its tool declares.
+    expect(() => budgetedJson({ text: 'x'.repeat(MAX_RESULT_BYTES) })).toThrow(
+      ResultTooLargeError
+    );
   });
 });
 

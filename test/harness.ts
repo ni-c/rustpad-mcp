@@ -87,12 +87,16 @@ export async function callText(
   client: Client,
   name: string,
   args: Record<string, unknown> = {}
-): Promise<{ text: string; isError: boolean }> {
+): Promise<{ text: string; isError: boolean; structured: unknown }> {
   const result = await client.callTool({ name, arguments: args });
   const content = result.content as { type: string; text?: string }[];
   return {
     text: content.map((part) => part.text ?? '').join(''),
     isError: result.isError === true,
+    // Every tool declares an `outputSchema`, so every successful answer carries
+    // this — and the SDK has already validated it against that schema by the
+    // time it arrives here.
+    structured: result.structuredContent,
   };
 }
 

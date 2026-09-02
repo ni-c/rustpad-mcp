@@ -161,6 +161,34 @@ docker run -i --rm -e RUSTPAD_URL=https://rustpad.example.net ghcr.io/ni-c/rustp
 
 With `RUSTPAD_READ_ONLY=true` only the first three are registered.
 
+### Structured output
+
+Every tool declares an `outputSchema` and answers with `structuredContent`
+alongside the text block, so a client can use the result without parsing prose.
+The five write tools used to answer with a sentence — _"Appended 12 characters
+to pad …"_ — and the sentence is still there, in the text block:
+
+```jsonc
+{
+  "id": "notes",
+  "url": "https://rustpad.example/#notes",
+  "appended_characters": 12,
+  "characters": 137,
+  "note": "Pads are ephemeral: …",
+}
+```
+
+`get_document` answers `{text}` rather than the pad as the whole result, for the
+same reason `get_document_info` has always been an object: a schema whose root
+is a string is served to a 2025-era client rewritten as `{result: …}`, so the
+tool would answer in two shapes depending on who asked. It is also where
+`empty` and `truncated` can live — an empty answer used to be a sentence.
+
+The two read tools that report pad content carry `untrusted: true` and
+`source: "rustpad"` as fields. A pad is world-writable to anyone who knows its
+id, including text this server wrote earlier, and a client that reads the
+structured half would otherwise get it with no framing at all.
+
 ## Safety
 
 - Pad content is world-writable and therefore untrusted: every read result is

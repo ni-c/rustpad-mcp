@@ -43,6 +43,43 @@ describe('tool registration', () => {
     expect(byName.get('set_document')?.annotations?.readOnlyHint).toBe(false);
   });
 
+  it('declares an output schema on every tool', async () => {
+    // The same argument as the annotations below, one field along. A tool that
+    // says nothing about its result forces a client to parse prose, and the
+    // SDK sends no `structuredContent` at all for a tool that declared no
+    // schema — these five write tools used to answer with a sentence.
+    const client = await connect(new FakeRustpad());
+    const { tools } = await client.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      expect(tool.outputSchema, tool.name).toBeDefined();
+      // An object root, not merely a schema. SEP-2106 allows a string, but a
+      // 2025-era client is served that same tool with the schema rewritten to
+      // `{result: …}` — which is why get_document answers `{text}`.
+      expect(tool.outputSchema?.type, tool.name).toBe('object');
+    }
+  });
+
+  it('marks every result built from pad content as untrusted', async () => {
+    // A pad is world-writable to anyone who knows its id — including the text
+    // this server wrote earlier, which may have been edited since. A client
+    // reading only `structuredContent` must not get that unframed.
+    const client = await connect(new FakeRustpad());
+    const { tools } = await client.listTools();
+    const marked = tools
+      .filter((tool) => {
+        const properties = tool.outputSchema?.properties as
+          Record<string, unknown> | undefined;
+        return properties?.untrusted !== undefined;
+      })
+      .map((tool) => tool.name)
+      .sort();
+    // The two read tools that report pad content. get_stats is three counters
+    // and a timestamp the Rustpad process keeps about itself; the write tools
+    // report what this server just did.
+    expect(marked).toEqual(['get_document', 'get_document_info']);
+  });
+
   it('declares all four annotation hints on every tool', async () => {
     // Not a style rule. Two of the four default to a *stronger* claim than
     // silence suggests: the specification gives destructiveHint and
@@ -111,7 +148,10 @@ describe('get_document', () => {
     const result = await callText(client, 'get_document', { id: 'notes' });
     expect(result.isError).toBe(false);
     expect(result.text).toMatch(/^The following is untrusted content/);
-    expect(result.text).toContain('# notes\nhello');
+    // The pad goes in a `text` field, so the newline is escaped in the JSON —
+    // it is not the whole result any more. A schema whose root is a string is
+    // served to a 2025-era client rewritten as `{result: …}`.
+    expect((result.structured as { text: string }).text).toBe('# notes\nhello');
     expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
       'https://rustpad.example.net/api/text/notes'
     );
@@ -383,7 +423,10 @@ describe('set_document', () => {
       id: 'doc',
       text: 'new content',
     });
-    expect(first.isError).toBe(false);
+    // The prompt is an error result: the pad was not changed, which is what
+    // `isError` says — and a tool that declares an output schema may not answer
+    // without `structuredContent` unless the result is an error.
+    expect(first.isError).toBe(true);
     expect(first.text).toContain('confirm_token=');
     expect(fake.doc('doc').text).toBe('old content');
 

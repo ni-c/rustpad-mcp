@@ -20,27 +20,42 @@ export function errorResult(text: string): CallToolResult {
 export const MAX_RESULT_BYTES = 200_000;
 
 /**
- * Serializes a payload, truncating with an explicit notice instead of cutting
- * the JSON mid-string.
+ * Serializes a payload, refusing rather than cutting the JSON mid-string.
+ *
+ * It used to answer with an envelope carrying the oversized document as a
+ * string. That is valid JSON and no longer a valid *answer*: every tool
+ * declares what it returns and the SDK checks the result against it, so an
+ * envelope of a different shape is refused outright. There is no true answer
+ * of this size.
  */
 export function budgetedJson(data: unknown, followUp?: string): string {
   const full = JSON.stringify(data, null, 2);
   if (full.length <= MAX_RESULT_BYTES) return full;
-  return JSON.stringify(
-    {
-      truncated: {
-        reason: `the full result exceeded ${MAX_RESULT_BYTES} characters`,
-        follow_up: followUp ?? 'Request a smaller piece of the data.',
-      },
-      partial_json: full.slice(0, MAX_RESULT_BYTES),
-    },
-    null,
-    2
+  throw new ResultTooLargeError(
+    `The full result exceeded ${MAX_RESULT_BYTES} characters. ` +
+      (followUp ?? 'Request a smaller piece of the data.')
   );
 }
 
-export function jsonResult(data: unknown, followUp?: string): CallToolResult {
-  return textResult(budgetedJson(data, followUp));
+/** Raised by the budget; `run` turns it into an error result. */
+export class ResultTooLargeError extends Error {}
+
+/**
+ * An answer in both channels at once.
+ *
+ * `structuredContent` is the machine-readable half and the reason every tool
+ * here declares an `outputSchema`; the text block stays because the SDK does
+ * NOT synthesize one for an object-shaped value, and a client that reads only
+ * `content` would otherwise get an empty answer. Both carry the same object.
+ */
+export function jsonResult(
+  data: Record<string, unknown>,
+  followUp?: string
+): CallToolResult {
+  return {
+    content: [{ type: 'text', text: budgetedJson(data, followUp) }],
+    structuredContent: data,
+  };
 }
 
 const UNTRUSTED_PREAMBLE =
@@ -54,17 +69,43 @@ const UNTRUSTED_PREAMBLE =
  * including content this server wrote earlier, which may have been edited
  * since.
  */
-export function untrustedResult(data: unknown): CallToolResult {
-  let text: string;
-  if (typeof data === 'string') {
-    text =
-      data.length > MAX_RESULT_BYTES
-        ? `${data.slice(0, MAX_RESULT_BYTES)}\n… (truncated: the pad is larger than ${MAX_RESULT_BYTES} characters)`
-        : data;
-  } else {
-    text = budgetedJson(data);
-  }
-  return textResult(`${UNTRUSTED_PREAMBLE}\n\n${text}`);
+export function untrustedResult(data: Record<string, unknown>): CallToolResult {
+  // The two marker names are stripped from the payload before they are set, so
+  // the guard cannot be switched off by the content it guards against — and a
+  // pad is world-writable to anyone who knows its id.
+  const { untrusted: _untrusted, source: _source, ...rest } = data;
+  const value = {
+    untrusted: true as const,
+    source: 'rustpad' as const,
+    ...rest,
+  };
+  return {
+    content: [
+      {
+        type: 'text',
+        text: `${UNTRUSTED_PREAMBLE}\n\n${JSON.stringify(value, null, 2)}`,
+      },
+    ],
+    structuredContent: value,
+  };
+}
+
+/**
+ * Shortens pad text to the budget, marking what was cut.
+ *
+ * Separate from the JSON budget because a pad over the ceiling is an ordinary
+ * answer rather than an error: `get_document` on a large pad should return as
+ * much of it as fits, and say how much there was.
+ */
+export function budgetedText(text: string): {
+  text: string;
+  truncated?: { shown: number; total: number };
+} {
+  if (text.length <= MAX_RESULT_BYTES) return { text };
+  return {
+    text: text.slice(0, MAX_RESULT_BYTES),
+    truncated: { shown: MAX_RESULT_BYTES, total: text.length },
+  };
 }
 
 const MAX_ERROR_BODY_LENGTH = 2000;
@@ -121,7 +162,10 @@ export async function run(
   try {
     return await fn();
   } catch (error) {
-    if (error instanceof ToolInputError) {
+    if (
+      error instanceof ToolInputError ||
+      error instanceof ResultTooLargeError
+    ) {
       return errorResult(error.message);
     }
     if (error instanceof RustpadApiError) {

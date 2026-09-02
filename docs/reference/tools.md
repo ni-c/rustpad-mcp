@@ -11,6 +11,17 @@ contain pad-derived text carry the untrusted-content marker.
 
 With `RUSTPAD_READ_ONLY=true` only the three read tools are registered.
 
+Every tool declares an `outputSchema` and answers with `structuredContent`
+beside the text block, so a client can use a result without parsing prose — the
+five write tools used to answer with a sentence, and the sentence is still in
+the text block. `get_document` answers `{text}` rather than the pad itself: a
+schema whose root is a string is served to a 2025-era client rewritten as
+`{result: …}`, and `empty` and `truncated` need somewhere to live either way.
+
+The two read tools that report pad content carry `untrusted: true` and
+`source: "rustpad"` as fields of the object, so the marker is something a client
+can check rather than prose it has to notice.
+
 👤 marks a tool that **asks a person** before it acts, through MCP elicitation —
 where the client cannot show a dialog it falls back to a two-call
 `confirm_token`. `ELICITATION=false` takes that fallback deliberately. See
