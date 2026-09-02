@@ -35,6 +35,9 @@ jobs:
       # checkout should not execute third-party install hooks.
       - run: npm ci --ignore-scripts
       - run: npm run lint
+      # Separate from `build`, which compiles only src/ into dist/. This also
+      # typechecks test/, which vitest transpiles without checking.
+      - run: npm run typecheck
       - run: npm run build
       - run: npm test
         if: matrix.node-version != 24

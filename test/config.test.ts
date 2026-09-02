@@ -30,6 +30,8 @@ describe('loadConfig', () => {
       insecureTls: false,
       readOnly: false,
       elicitation: true,
+      allowTools: undefined,
+      denyTools: undefined,
     });
   });
 
@@ -181,13 +183,23 @@ describe('loadConfig', () => {
 describe('missingConfigKeys', () => {
   it('names the missing URL', () => {
     expect(
-      missingConfigKeys({ url: undefined, insecureTls: false, readOnly: false })
+      missingConfigKeys({
+        url: undefined,
+        insecureTls: false,
+        readOnly: false,
+        elicitation: true,
+        allowTools: undefined,
+        denyTools: undefined,
+      })
     ).toEqual(['RUSTPAD_URL']);
     expect(
       missingConfigKeys({
         url: 'https://x',
         insecureTls: false,
         readOnly: false,
+        elicitation: true,
+        allowTools: undefined,
+        denyTools: undefined,
       })
     ).toEqual([]);
   });
