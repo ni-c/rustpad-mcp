@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeRustpad } from './fake-rustpad.js';
 import { callText, connect, mockFetch, tokenOf } from './harness.js';
+import { expectPortableToolSchemas } from 'mcp-integration-harness';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -58,6 +59,17 @@ describe('tool registration', () => {
       // `{result: …}` — which is why get_document answers `{text}`.
       expect(tool.outputSchema?.type, tool.name).toBe('object');
     }
+  });
+
+  it('advertises schemas every client can read', async () => {
+    // Legal JSON Schema is not enough. `{}` in a schema position — what zod
+    // writes for `looseObject`, `catchall` and `z.unknown()` — and `type` as an
+    // array are both refused, or silently dropped, by some clients. Neither is
+    // a contract: each has an equivalent spelling that says the same thing, so
+    // there is nothing here to excuse.
+    const client = await connect(new FakeRustpad());
+    const { tools } = await client.listTools();
+    expectPortableToolSchemas(tools);
   });
 
   it('marks every result built from pad content as untrusted', async () => {
