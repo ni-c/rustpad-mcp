@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
-## [Unreleased]
+## [0.3.0] - 2026-09-03
 
 ### Added
 
@@ -74,6 +74,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the life of the connection, exactly as a hand-wired
   `StdioServerTransport` served it.
 
+### Fixed
+
+- The message after an unacknowledged edit no longer claims **"the pad was left
+  unchanged"**. The History echo is the only acknowledgement this protocol has,
+  and its absence says nothing about whether the server applied the operation —
+  it may have, and only the echo missed the deadline. The old wording invited
+  exactly the retry that turns one `append_to_document` into two; the new one
+  says the outcome is unknown, points at `get_document`, and names the tool that
+  must not simply be repeated.
+
+- `RUSTPAD_READ_ONLY` now accepts `1` and `yes` as well as `true`, in any casing
+  and with surrounding whitespace. A switch that _protects_ something is read
+  leniently: `RUSTPAD_READ_ONLY=1` used to register all five write tools against
+  an instance the operator meant to protect, silently. `RUSTPAD_INSECURE_TLS` is
+  unchanged and still compares against exactly `true`, because it removes a
+  protection and a typo there has to fail the safe way.
+
+- A `confirm_token` that does not match is now refused with the reason —
+  invalid, expired, or issued for different arguments — instead of being
+  answered with a fresh prompt. The second is self-healing when a token merely
+  expired and silent when the token was issued for a different pad or a
+  different replacement, which is the case the binding exists to catch.
+
+- Confirmation tokens are compared with a **constant-time** comparison. The
+  copy in this repository used `!==`, which leaks through timing how much of a
+  guess was right. Reaching a token still requires having received it in a
+  previous tool result, so this closes a margin rather than a hole.
+- An entry in `RUSTPAD_ALLOW_TOOLS` that is not tool-name-shaped is now
+  **redacted** in the error rather than quoted back, so a value pasted into the
+  wrong variable is not echoed into the client's log.
+
 ### Security
 
 - An **empty pad is now established rather than assumed**. Rustpad sends no
@@ -134,37 +165,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at a tighter, more satisfying number: a low count would refuse ordinary pads
   that work today, to save an adversary twenty seconds it can spend once per
   tool call either way.
-
-### Fixed
-
-- The message after an unacknowledged edit no longer claims **"the pad was left
-  unchanged"**. The History echo is the only acknowledgement this protocol has,
-  and its absence says nothing about whether the server applied the operation —
-  it may have, and only the echo missed the deadline. The old wording invited
-  exactly the retry that turns one `append_to_document` into two; the new one
-  says the outcome is unknown, points at `get_document`, and names the tool that
-  must not simply be repeated.
-
-- `RUSTPAD_READ_ONLY` now accepts `1` and `yes` as well as `true`, in any casing
-  and with surrounding whitespace. A switch that _protects_ something is read
-  leniently: `RUSTPAD_READ_ONLY=1` used to register all five write tools against
-  an instance the operator meant to protect, silently. `RUSTPAD_INSECURE_TLS` is
-  unchanged and still compares against exactly `true`, because it removes a
-  protection and a typo there has to fail the safe way.
-
-- A `confirm_token` that does not match is now refused with the reason —
-  invalid, expired, or issued for different arguments — instead of being
-  answered with a fresh prompt. The second is self-healing when a token merely
-  expired and silent when the token was issued for a different pad or a
-  different replacement, which is the case the binding exists to catch.
-
-- Confirmation tokens are compared with a **constant-time** comparison. The
-  copy in this repository used `!==`, which leaks through timing how much of a
-  guess was right. Reaching a token still requires having received it in a
-  previous tool result, so this closes a margin rather than a hole.
-- An entry in `RUSTPAD_ALLOW_TOOLS` that is not tool-name-shaped is now
-  **redacted** in the error rather than quoted back, so a value pasted into the
-  wrong variable is not echoed into the client's log.
 
 ## [0.2.0] - 2026-08-27
 
