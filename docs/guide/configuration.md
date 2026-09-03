@@ -1,12 +1,13 @@
 # Configuration
 
-Three environment variables; only the first is required.
+Four environment variables; only the first is required.
 
 | Variable               | Required | Description                                                              |
 | ---------------------- | -------- | ------------------------------------------------------------------------ |
 | `RUSTPAD_URL`          | yes      | Base URL of the instance, e.g. `https://rustpad.example.net`             |
 | `RUSTPAD_READ_ONLY`    | no       | `true` registers only the read tools                                     |
 | `RUSTPAD_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection only) |
+| `ELICITATION`          | no       | `false` replaces the approval dialog with the two-call token             |
 
 ## One URL for everything
 
@@ -23,9 +24,37 @@ unencrypted. A malformed URL exits instead of limping along.
 
 ## Boolean semantics
 
-The two flags compare against exactly the string `true`. `True`, `1` or `yes`
-count as **false** — deliberately strict, and the reason the server prints a
-banner on start when read-only or insecure-TLS mode is actually active.
+The two prefixed booleans are parsed in opposite directions, because their
+failure modes are not symmetric.
+
+`RUSTPAD_READ_ONLY` is a **protection**, so it is read leniently:
+`true`, `TRUE`, `1` and `yes` all switch it on, surrounding whitespace and all.
+Read strictly, `RUSTPAD_READ_ONLY=1` would register all five write tools
+against an instance the operator meant to protect, and nothing anywhere would
+report it.
+
+`RUSTPAD_INSECURE_TLS` **removes** one, so it compares against exactly the
+string `true`. `True` or `1` count as false there, which leaves certificate
+validation on — the harmless way to be wrong. The server prints a banner on
+start when insecure-TLS mode is actually active.
+
+`ELICITATION` is the exception, in both directions: it is case-insensitive, and
+a value that is neither `true` nor `false` **stops the server** instead of
+falling back. It is the only one of the three that defaults to *on*, so failing
+open on a typo would leave the dialog running while the operator believed it
+was off.
+
+## Turning the approval dialog off
+
+Guarded tools — `set_document` on a non-empty pad, `replace_in_document` across
+more than one match — ask a person through MCP elicitation before they act.
+`ELICITATION=false` takes them to the two-call token instead. It does not
+remove the guard; there is no setting in which a guarded call goes
+unannounced.
+
+The variable deliberately carries no `RUSTPAD_` prefix, which means it reaches
+every MCP server in the same environment. [Asking a person](/guide/approval)
+explains what that costs and what makes it visible.
 
 ## Ephemerality
 

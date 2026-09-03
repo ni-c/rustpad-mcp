@@ -6,6 +6,8 @@ import {
   missingConfigMessage,
 } from '../src/config.js';
 
+const URL_OK = 'https://rustpad.example.net';
+
 function silence() {
   return vi.spyOn(console, 'error').mockImplementation(() => undefined);
 }
@@ -27,6 +29,49 @@ describe('loadConfig', () => {
       url: 'https://rustpad.example.net',
       insecureTls: false,
       readOnly: false,
+      elicitation: true,
+      allowTools: undefined,
+      denyTools: undefined,
+    });
+  });
+
+  describe('ELICITATION', () => {
+    it('defaults to on, and to on for an empty value', () => {
+      // The only variable of this family that defaults to *on*. An unset
+      // switch has to mean "ask", or a deployment that never heard of it
+      // would quietly stop asking.
+      expect(loadConfig({ RUSTPAD_URL: URL_OK }).elicitation).toBe(true);
+      expect(
+        loadConfig({ RUSTPAD_URL: URL_OK, ELICITATION: '' }).elicitation
+      ).toBe(true);
+    });
+
+    it('is switched off by "false", in any casing or padding', () => {
+      for (const raw of ['false', 'FALSE', ' False ']) {
+        expect(
+          loadConfig({ RUSTPAD_URL: URL_OK, ELICITATION: raw }).elicitation,
+          raw
+        ).toBe(false);
+      }
+    });
+
+    it('refuses to start on anything else, naming both valid values', () => {
+      // Deliberately fatal rather than falling back to the default. A typo
+      // would leave the dialog running while the operator believes it is off,
+      // and nothing else would ever tell them.
+      for (const raw of ['1', 'off', 'no', 'yes']) {
+        const error = silence();
+        const exit = trapExit();
+        expect(() =>
+          loadConfig({ RUSTPAD_URL: URL_OK, ELICITATION: raw })
+        ).toThrow('exit');
+        expect(exit).toHaveBeenCalledWith(1);
+        const message = String(error.mock.calls[0]?.[0] ?? '');
+        expect(message, raw).toContain('ELICITATION');
+        expect(message, raw).toContain('"true"');
+        expect(message, raw).toContain('"false"');
+        vi.restoreAllMocks();
+      }
     });
   });
 
@@ -92,33 +137,69 @@ describe('loadConfig', () => {
     expect(error).not.toHaveBeenCalled();
   });
 
-  it('treats the booleans as exactly "true"', () => {
+  describe('RUSTPAD_READ_ONLY', () => {
     const base = { RUSTPAD_URL: 'https://rustpad.example.net' };
-    expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: 'true' }).readOnly).toBe(
-      true
-    );
-    expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: 'True' }).readOnly).toBe(
-      false
-    );
-    expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: '1' }).readOnly).toBe(
-      false
-    );
+
+    it('accepts every spelling an operator plausibly means by "on"', () => {
+      // Parsed leniently on purpose, and not for convenience. This switch is
+      // the difference between three tools and eight against an instance with
+      // no authentication of its own; read strictly, `RUSTPAD_READ_ONLY=1`
+      // would register every write tool and nothing would ever report it.
+      for (const raw of ['true', 'True', 'TRUE', ' true ', '1', 'yes', 'YES']) {
+        expect(
+          loadConfig({ ...base, RUSTPAD_READ_ONLY: raw }).readOnly,
+          raw
+        ).toBe(true);
+      }
+    });
+
+    it('stays off when unset or empty', () => {
+      expect(loadConfig(base).readOnly).toBe(false);
+      expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: '  ' }).readOnly).toBe(
+        false
+      );
+      expect(loadConfig({ ...base, RUSTPAD_READ_ONLY: 'false' }).readOnly).toBe(
+        false
+      );
+    });
+  });
+
+  it('reads RUSTPAD_INSECURE_TLS as exactly "true"', () => {
+    // The opposite direction from RUSTPAD_READ_ONLY, deliberately: this one
+    // removes a protection, so a typo has to leave certificate validation on.
+    const base = { RUSTPAD_URL: 'https://rustpad.example.net' };
     expect(
       loadConfig({ ...base, RUSTPAD_INSECURE_TLS: 'true' }).insecureTls
     ).toBe(true);
+    expect(loadConfig({ ...base, RUSTPAD_INSECURE_TLS: '1' }).insecureTls).toBe(
+      false
+    );
+    expect(
+      loadConfig({ ...base, RUSTPAD_INSECURE_TLS: 'True' }).insecureTls
+    ).toBe(false);
   });
 });
 
 describe('missingConfigKeys', () => {
   it('names the missing URL', () => {
     expect(
-      missingConfigKeys({ url: undefined, insecureTls: false, readOnly: false })
+      missingConfigKeys({
+        url: undefined,
+        insecureTls: false,
+        readOnly: false,
+        elicitation: true,
+        allowTools: undefined,
+        denyTools: undefined,
+      })
     ).toEqual(['RUSTPAD_URL']);
     expect(
       missingConfigKeys({
         url: 'https://x',
         insecureTls: false,
         readOnly: false,
+        elicitation: true,
+        allowTools: undefined,
+        denyTools: undefined,
       })
     ).toEqual([]);
   });

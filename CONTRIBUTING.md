@@ -30,27 +30,51 @@ npm run build
   against, or the one your change might open, in the PR text.
 - **No new runtime dependencies** without a very good reason; the small tree is a
   feature.
-- Run `npm run lint` before pushing — it checks both eslint and prettier, and
+- Run `npm run lint` before pushing — it checks both oxlint and prettier, and
   prettier also validates the YAML, JSON and Markdown files.
 
-## Verifying against a real Rustpad
+## Running the integration suite
 
-The unit tests mock both `fetch` and the WebSocket, so they cannot catch a change in
-Rustpad's own behaviour. A disposable instance is one command:
+The unit tests replace both `fetch` and the WebSocket, so they check that this
+server speaks Rustpad's operational-transform protocol the way its author
+understood it — against `test/fake-rustpad.ts`, written to that same
+understanding. Only a real Rustpad can disagree. The integration suite spawns
+the built server over stdio against one in Docker and calls **every tool in the
+catalogue**, reading each document back through Rustpad's own
+`GET /api/text/{id}` rather than trusting the reply.
 
 ```sh
-docker run --rm -dp 127.0.0.1:3030:3030 --name rustpad-test ekzhang/rustpad
+npm run build     # the suite runs dist/index.js, not src/
+docker compose -f test/integration/compose.yml up -d --wait
+npm run test:integration
+docker compose -f test/integration/compose.yml down
 ```
 
-Then exercise the built server over stdio against a throwaway pad:
+`down` rather than `down -v`: Rustpad holds documents in memory only, so
+recreating the container is the whole reset. It is not optional between runs —
+the suite uses fixed pad ids and Rustpad has no way to delete a pad, so
+`create_document` correctly refuses the second time. The bootstrap checks
+`num_documents` and says so rather than failing halfway through with a message
+about the wrong thing.
+
+The block worth keeping honest is **UTF-16 offsets**. An emoji is one code
+point and two code units; a flag is four. If the server ever counts code
+points, every edit after such a character lands in the wrong place and the
+document corrupts silently — and a fake that shares the mistake agrees forever.
+Those cases are only meaningful against a real Rustpad, which is where they now
+run.
+
+Rustpad has no authentication of any kind: a pad id is the only thing between a
+document and whoever guesses it. That is why the compose file binds to
+`127.0.0.1`, and why the harness refuses any backend URL that is not on this
+machine.
+
+For poking at one tool by hand, the inspector against the same stack:
 
 ```sh
-npm run build
+docker compose -f test/integration/compose.yml up -d --wait
 RUSTPAD_URL=http://127.0.0.1:3030 npx @modelcontextprotocol/inspector node dist/index.js
 ```
-
-Documents in that instance are in-memory only; `docker stop rustpad-test` removes
-everything.
 
 ## Questions and bugs
 

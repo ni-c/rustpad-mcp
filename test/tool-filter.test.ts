@@ -1,11 +1,16 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+/**
+ * What this repository still has to prove about its tool filter.
+ *
+ * The filter lives in `mcp-tool-allowlist` and is tested there: pattern syntax,
+ * the preset, how a rejected entry is quoted back, the shape of every message.
+ * Repeating that here would test the dependency.
+ *
+ * What only this repository can assert is the wiring — that the catalogue names
+ * exactly the tools the server registers, that the messages name *these*
+ * variables, that the gate hangs off `RUSTPAD_READ_ONLY`, and that a filtered
+ * tool is really gone rather than merely hidden.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import type { Config } from '../src/config.js';
-import { createServer } from '../src/server.js';
-import { ToolFilterError } from '../src/tool-filter.js';
 import {
   ALL_TOOLS,
   ESSENTIAL_TOOLS,
@@ -13,32 +18,9 @@ import {
   WRITE_TOOLS,
 } from '../src/tools/catalogue.js';
 
-const base: Config = {
-  url: 'https://rustpad.example.net',
-  insecureTls: false,
-  readOnly: false,
-  allowTools: undefined,
-  denyTools: undefined,
-};
-
-function config(overrides: Partial<Config> = {}): Config {
-  return { ...base, ...overrides };
-}
-
-/** The tools a server built with this configuration actually offers. */
-async function toolNames(overrides: Partial<Config> = {}): Promise<string[]> {
-  vi.stubGlobal('fetch', vi.fn());
-  const server = createServer(config(overrides));
-  const client = new Client({ name: 'test-client', version: '0.0.0' });
-  const [clientTransport, serverTransport] =
-    InMemoryTransport.createLinkedPair();
-  await Promise.all([
-    server.connect(serverTransport),
-    client.connect(clientTransport),
-  ]);
-  const { tools } = await client.listTools();
-  return tools.map((t) => t.name).sort();
-}
+import { createServer } from '../src/server.js';
+import { ToolFilterError } from 'mcp-tool-allowlist';
+import { connect, testConfig, toolNames } from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -115,19 +97,6 @@ describe('selecting tools', () => {
     );
   });
 
-  it('trims entries, ignores case and skips empty ones', async () => {
-    expect(
-      await toolNames({ allowTools: ' GET_DOCUMENT ,, get_document_info, ' })
-    ).toEqual(['get_document', 'get_document_info'].sort());
-  });
-
-  it('treats an empty value as no filter at all', async () => {
-    // `ALLOW_TOOLS=` in a compose file must not mean "allow nothing".
-    expect(await toolNames({ allowTools: '   ' })).toEqual(
-      [...ALL_TOOLS].sort()
-    );
-  });
-
   it('leaves an unconfigured server untouched', async () => {
     expect(await toolNames()).toEqual([...ALL_TOOLS].sort());
   });
@@ -147,24 +116,17 @@ describe('a filtered-out tool', () => {
         });
       })
     );
-    const server = createServer(config({ allowTools: 'get_document' }));
-    const client = new Client({ name: 'test-client', version: '0.0.0' });
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
-    await Promise.all([
-      server.connect(serverTransport),
-      client.connect(clientTransport),
-    ]);
+    const client = await connect(undefined, { allowTools: 'get_document' });
 
-    const result = (await client.callTool({
-      name: 'append_to_document',
-      arguments: {},
-    })) as CallToolResult;
-
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toContain(
-      'Tool append_to_document not found'
-    );
+    // SDK v2 reports an unknown tool as a JSON-RPC error rather than as a
+    // result carrying isError. Either way the call fails and nothing reaches
+    // the API, which is what this test is about.
+    await expect(
+      client.callTool({
+        name: 'append_to_document',
+        arguments: {},
+      })
+    ).rejects.toThrow('Tool append_to_document not found');
     expect(calls).toHaveLength(0);
   });
 });
@@ -173,37 +135,22 @@ describe('refusing an unusable list', () => {
   it('rejects a name no tool has, and says which names exist', () => {
     // A typo that was merely ignored would leave a tool missing with no trace
     // of why — nobody looks for the cause of an absence in an env var.
-    expect(() => createServer(config({ allowTools: 'get_documenz' }))).toThrow(
-      ToolFilterError
-    );
-    expect(() => createServer(config({ allowTools: 'get_documenz' }))).toThrow(
-      /no tool matches "get_documenz".*get_document/s
-    );
-  });
-
-  it('rejects a pattern that matches nothing', () => {
-    expect(() => createServer(config({ allowTools: 'zzz_*' }))).toThrow(
-      /no tool matches "zzz_\*"/
-    );
-  });
-
-  it('rejects a pattern with the star anywhere but last', () => {
-    expect(() => createServer(config({ allowTools: '*_x' }))).toThrow(
-      /single trailing "\*"/
-    );
-    expect(() => createServer(config({ allowTools: 'get_*_x' }))).toThrow(
-      /single trailing "\*"/
-    );
+    expect(() =>
+      createServer(testConfig({ allowTools: 'get_documenz' }))
+    ).toThrow(ToolFilterError);
+    expect(() =>
+      createServer(testConfig({ allowTools: 'get_documenz' }))
+    ).toThrow(/no tool matches "get_documenz".*get_document/s);
   });
 
   it('applies the same rule to the deny list', () => {
-    expect(() => createServer(config({ denyTools: 'get_documenz' }))).toThrow(
-      /_DENY_TOOLS: no tool matches "get_documenz"/
-    );
+    expect(() =>
+      createServer(testConfig({ denyTools: 'get_documenz' }))
+    ).toThrow(/_DENY_TOOLS: no tool matches "get_documenz"/);
   });
 
   it('rejects a list that would leave no tools at all', () => {
-    expect(() => createServer(config({ denyTools: '*' }))).toThrow(
+    expect(() => createServer(testConfig({ denyTools: '*' }))).toThrow(
       /empty tool list/
     );
   });
@@ -217,7 +164,9 @@ describe('together with read-only mode', () => {
     // the reader looking for a typo that is not there.
     let thrown: unknown;
     try {
-      createServer(config({ ...readOnly, allowTools: 'append_to_document' }));
+      createServer(
+        testConfig({ ...readOnly, allowTools: 'append_to_document' })
+      );
     } catch (error) {
       thrown = error;
     }
@@ -260,7 +209,7 @@ describe('together with read-only mode', () => {
     // whole allow list, the empty server needs the real explanation.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(() =>
-      createServer(config({ ...readOnly, allowTools: 'append_*' }))
-    ).toThrow(/only write tools, but .*_READ_ONLY is set/);
+      createServer(testConfig({ ...readOnly, allowTools: 'append_*' }))
+    ).toThrow(/read-only mode suppresses.*RUSTPAD_READ_ONLY is set/s);
   });
 });

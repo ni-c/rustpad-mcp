@@ -13,6 +13,9 @@ const CONFIG: Config = {
   url: 'https://rustpad.example.net',
   insecureTls: false,
   readOnly: false,
+  elicitation: true,
+  allowTools: undefined,
+  denyTools: undefined,
 };
 
 type Listener = (event: { data?: unknown }) => void;
@@ -170,6 +173,79 @@ describe('RustpadSession against a hostile server', () => {
       })
     );
     await expect(session).rejects.toThrow(/zero-length/);
+  });
+
+  it('refuses a History carrying more operations than it will fold', async () => {
+    // The backstop on maxFrameBytes: at the default frame size this cap cannot
+    // fire, and it is set that way on purpose, so the limits are lowered here
+    // to reach it. What bounds the work at default settings is the deadline
+    // check in the test below.
+    const { session, socket } = await openAgainst(
+      (s) =>
+        s.message({
+          History: {
+            start: 0,
+            operations: Array.from({ length: 10 }, (_, i) => ({
+              id: i,
+              operation: ['x'],
+            })),
+          },
+        }),
+      limits({ maxHistoryOperations: 3 })
+    );
+    await expect(session).rejects.toThrow(/more than the 3 this client/);
+    expect(socket().closed).toBe(true);
+  });
+
+  it('abandons a History it cannot fold within the deadline', async () => {
+    // The deadline check that used to sit only *around* `handle`, where a
+    // single frame could hold the event loop for as long as it liked. Measured
+    // at 2.4 ms per operation against a full document, 35 000 of them are 85
+    // seconds of synchronous work in which nothing is ever consulted.
+    const filler = 'x'.repeat(100_000);
+    const { session, socket } = await openAgainst(
+      (s) => {
+        s.message({
+          History: { start: 0, operations: [{ id: 1, operation: [filler] }] },
+        });
+        s.message({
+          History: {
+            start: 1,
+            operations: Array.from({ length: 2000 }, (_, i) => ({
+              id: i + 2,
+              operation: [100_000],
+            })),
+          },
+        });
+      },
+      limits({ settleIdleMs: 20, settleDeadlineMs: 30 })
+    );
+    // Without the check inside the loop this still fails — but only after all
+    // 2000 operations have run, and with the message about a chatty server
+    // rather than about the work it asked for.
+    await expect(session).rejects.toThrow(/could apply before its deadline/);
+    expect(socket().closed).toBe(true);
+  });
+
+  it('does not claim the pad is unchanged when the echo never comes', async () => {
+    // The acknowledgement is the History echo and nothing else, so its absence
+    // says nothing about whether the server applied the operation. Claiming it
+    // did not is an invitation to retry, and `append_to_document` retried is
+    // the text twice.
+    const { session } = await openAgainst(
+      () => {},
+      limits({ settleIdleMs: 20, ackTimeoutMs: 50 })
+    );
+    const opened = await session;
+    const failure = await opened
+      .edit(['x'])
+      .then(() => 'the edit resolved, which it must not')
+      .catch((error: unknown) => (error as Error).message);
+    expect(failure).toContain('whether it was applied is unknown');
+    expect(failure).toContain('get_document');
+    expect(failure).toContain('append_to_document');
+    expect(failure).not.toContain('left unchanged');
+    opened.close();
   });
 
   it('caps the tracked users and truncates their names', async () => {

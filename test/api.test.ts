@@ -7,6 +7,9 @@ const CONFIG: Config = {
   url: 'https://rustpad.example.net',
   insecureTls: false,
   readOnly: false,
+  elicitation: true,
+  allowTools: undefined,
+  denyTools: undefined,
 };
 
 afterEach(() => {

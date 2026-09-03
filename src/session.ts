@@ -28,6 +28,26 @@ export interface SessionLimits {
   settleDeadlineMs: number;
   maxQueuedMessages: number;
   maxFrameBytes: number;
+  /**
+   * Operations this client will fold out of a single History message.
+   *
+   * A backstop on {@link maxFrameBytes}, not the bound that does the work.
+   * Folding one operation costs O(document length), so the cost of a History
+   * message is the product of its length and the document's — and a count is a
+   * poor proxy for either. The bound that actually holds is the deadline check
+   * inside the folding loop; this one exists so that raising `maxFrameBytes`
+   * does not silently raise the number of operations one frame may demand.
+   *
+   * Set above what a 1 MiB frame can carry (the smallest useful entry is about
+   * 25 bytes, so ~42 000) on purpose. A tighter count would refuse pads that
+   * work today: Rustpad replays a pad's entire history on connect and never
+   * compacts it, a typing session produces roughly one operation per keystroke,
+   * and a real entry runs 30–60 bytes — so a cap in the low tens of thousands
+   * would turn "slow but fine" into "permanently unusable" for an ordinary
+   * heavily-edited pad, to save an adversary's frame twenty seconds it can only
+   * spend once per tool call anyway.
+   */
+  maxHistoryOperations: number;
   maxUsers: number;
 }
 
@@ -38,6 +58,7 @@ export const DEFAULT_LIMITS: SessionLimits = {
   settleDeadlineMs: 20_000,
   maxQueuedMessages: 1000,
   maxFrameBytes: 1024 * 1024,
+  maxHistoryOperations: 50_000,
   maxUsers: 200,
 };
 
@@ -55,6 +76,18 @@ export interface DocumentState {
   language: string | undefined;
   /** Users connected right now, keyed by their socket id (excluding us). */
   users: Map<number, UserInfo>;
+  /**
+   * Whether a History message was ever seen on this connection.
+   *
+   * The one thing `text === ''` cannot tell a caller apart. Rustpad sends no
+   * History at all for a pad that has never been written, so silence means
+   * either "empty" or "not here yet" — and {@link RustpadSession.settle} ends
+   * the initial burst after {@link SessionLimits.settleIdleMs} of quiet, which
+   * a slow instance, a restored database or a buffering proxy can outlast.
+   * Everything that treats an empty pad as licence to skip a guard has to know
+   * which of the two it is looking at.
+   */
+  sawHistory: boolean;
 }
 
 interface ServerMsg {
@@ -217,6 +250,7 @@ export class RustpadSession {
     text: '',
     language: undefined,
     users: new Map(),
+    sawHistory: false,
   };
   private identity = -1;
   private infoSent = false;
@@ -299,11 +333,20 @@ export class RustpadSession {
         if (Date.now() >= deadline) continue; // deadline check throws above
         return;
       }
-      this.handle(raw);
+      this.handle(raw, deadline);
     }
   }
 
-  private handle(raw: string): ServerMsg {
+  /**
+   * Folds one server message into the state.
+   *
+   * `deadline` is the wall-clock limit of whatever wait this message arrived
+   * during, and it is passed in rather than checked by the caller because the
+   * expensive part happens *here*: a single History message can carry tens of
+   * thousands of operations, and the caller's own deadline check is not reached
+   * again until all of them have been applied.
+   */
+  private handle(raw: string, deadline: number): ServerMsg {
     let msg: ServerMsg;
     try {
       msg = JSON.parse(raw) as ServerMsg;
@@ -317,15 +360,37 @@ export class RustpadSession {
         throw new Error('the Rustpad server sent a malformed History message');
       }
       const { start, operations } = msg.History;
+      if (operations.length > this.limits.maxHistoryOperations) {
+        throw new Error(
+          `the Rustpad server sent a History of ${operations.length} operations, more than the ${this.limits.maxHistoryOperations} this client will fold`
+        );
+      }
+      this.state.sawHistory = true;
       // The server replays from `start`; anything before the local revision
       // has been applied already.
       for (let i = this.state.revision - start; i < operations.length; i++) {
         const entry = operations[i];
         if (!entry) break;
+        // Inside the loop, not around it: each iteration costs O(document
+        // length), so a frame full of operations against a large document is
+        // minutes of work that no outer deadline check would interrupt. A
+        // hostile or broken upstream must cost a failed tool call, not a hung
+        // process, and this is the only place that stays true of.
+        if (Date.now() > deadline) {
+          throw new Error(
+            'the Rustpad server sent more edit history than this client could apply before its deadline — the pad may be too heavily edited to work with through this server'
+          );
+        }
         const text = applyOperation(this.state.text, entry.operation);
         // Rustpad itself rejects edits beyond this size, so anything larger
         // arriving inbound is not a legitimate document — refuse to buffer it.
-        if (codepointLength(text) > MAX_DOCUMENT_CODEPOINTS) {
+        // The UTF-16 length is never below the code-point count, so the cheap
+        // comparison rules out every operation but the ones near the limit,
+        // and only those pay for the exact scan.
+        if (
+          text.length > MAX_DOCUMENT_CODEPOINTS &&
+          codepointLength(text) > MAX_DOCUMENT_CODEPOINTS
+        ) {
           throw new Error(
             'the Rustpad server sent a document above the 256 KiB limit'
           );
@@ -389,13 +454,20 @@ export class RustpadSession {
     for (;;) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
+        // Deliberately does not claim the pad is unchanged. The echo is the
+        // only acknowledgement this protocol has, and its absence says nothing
+        // about whether the operation was applied — the server may have taken
+        // it and lost the echo. Saying "unchanged" would invite exactly the
+        // retry that turns one append into two.
         throw new Error(
-          'the Rustpad server did not acknowledge the edit in time — the pad was left unchanged or a concurrent edit interfered'
+          'the Rustpad server did not acknowledge the edit in time — whether it was applied is unknown. ' +
+            'Read the pad with get_document before deciding what to do; in particular do not repeat ' +
+            'append_to_document, which would append the text a second time if the first one landed.'
         );
       }
       const raw = await this.messages.next(remaining);
       if (raw === null) continue;
-      const msg = this.handle(raw);
+      const msg = this.handle(raw, deadline);
       const acked = msg.History?.operations.some(
         (op) => op.id === this.identity
       );
@@ -420,7 +492,7 @@ export class RustpadSession {
       }
       const raw = await this.messages.next(remaining);
       if (raw === null) continue;
-      const msg = this.handle(raw);
+      const msg = this.handle(raw, deadline);
       if (msg.Language === language) return;
     }
   }
