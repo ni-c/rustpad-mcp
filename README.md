@@ -1,6 +1,7 @@
 # rustpad-mcp
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/rustpad-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/rustpad-mcp/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ni-c/rustpad-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/ni-c/rustpad-mcp)
 [![npm version](https://img.shields.io/npm/v/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/rustpad-mcp)](https://www.npmjs.com/package/rustpad-mcp)
 [![node](https://img.shields.io/node/v/rustpad-mcp)](https://nodejs.org)
