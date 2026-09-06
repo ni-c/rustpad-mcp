@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `homepage` in `package.json` points at the documentation site rather than at
+  the README anchor on GitHub. It is what npm shows next to the package, and
+  every one of these servers has had a documentation site for weeks.
+
 ### Added
 
 - The server introduces itself in full. `title`, `description`, `websiteUrl` and
