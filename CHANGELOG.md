@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The tool reference marks the `essential` preset and the tools that ask a
+  person before they act, per tool rather than only in the introduction. A test
+  keeps both sets in step with the code.
 - `homepage` in `package.json` points at the documentation site rather than at
   the README anchor on GitHub. It is what npm shows next to the package, and
   every one of these servers has had a documentation site for weeks.

@@ -37,6 +37,8 @@ this server talks to the one Rustpad it is configured for.
 
 ### get_document
 
+**essential**
+
 Reads the current plain-text content of a pad over HTTP.
 
 | Parameter | Type   | Required | Description |
@@ -47,6 +49,8 @@ An empty result is ambiguous — Rustpad reports an empty pad, a pad that never
 existed and an expired pad identically, and the result says so.
 
 ### get_document_info
+
+**essential**
 
 Connects to the collaboration socket and reports metadata.
 
@@ -66,6 +70,8 @@ currently in memory, number persisted in the database (0 without `SQLITE_URI`).
 
 ### create_document
 
+**essential**
+
 | Parameter  | Type   | Required | Description                                   |
 | ---------- | ------ | -------- | --------------------------------------------- |
 | `id`       | string | no       | Desired pad id; omitted → a random one        |
@@ -76,6 +82,8 @@ Fails if the pad already has content — use `set_document` or
 `append_to_document` for that. Returns the shareable URL.
 
 ### set_document 👤
+
+**essential**
 
 | Parameter       | Type   | Required | Description                                    |
 | --------------- | ------ | -------- | ---------------------------------------------- |
@@ -90,6 +98,8 @@ replacement text, and the second call with that token executes. Writing an
 empty pad asks nothing: there is nothing to lose.
 
 ### append_to_document
+
+**essential**
 
 | Parameter | Type   | Required | Description                 |
 | --------- | ------ | -------- | --------------------------- |
