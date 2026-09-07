@@ -111,11 +111,14 @@ describe('RustpadSession against a hostile server', () => {
   it('gives up when the server never goes idle, and closes the socket', async () => {
     const { session, socket } = await openAgainst(
       (s) => {
-        const timer = setInterval(() => s.message({ Language: 'x' }), 20);
+        // Well inside the idle window: under a loaded test run a 20 ms
+        // interval against a 50 ms window missed once, and the session
+        // settled instead of giving up.
+        const timer = setInterval(() => s.message({ Language: 'x' }), 5);
         // Unref so a leaked interval cannot keep the test process alive.
         timer.unref?.();
       },
-      limits({ settleIdleMs: 50, settleDeadlineMs: 300 })
+      limits({ settleIdleMs: 100, settleDeadlineMs: 300 })
     );
     await expect(session).rejects.toThrow(/kept sending/);
     expect(socket().closed).toBe(true);
@@ -167,12 +170,17 @@ describe('RustpadSession against a hostile server', () => {
   });
 
   it('refuses a History operation with an invalid op component', async () => {
-    const { session } = await openAgainst((s) =>
-      s.message({
-        History: { start: 0, operations: [{ id: 1, operation: [0] }] },
-      })
-    );
-    await expect(session).rejects.toThrow(/zero-length/);
+    // Refused by the structural check, before `applyOperation` sees it: a
+    // zero and a fraction are `typeof "number"` too. (`NaN` and `Infinity`
+    // are not JSON, so a server cannot send them at all.)
+    for (const op of ['0', '1.5', '-2.5', '1e999']) {
+      const { session } = await openAgainst((s) =>
+        s.raw(
+          `{"History":{"start":0,"operations":[{"id":1,"operation":[${op}]}]}}`
+        )
+      );
+      await expect(session, op).rejects.toThrow(/malformed History/);
+    }
   });
 
   it('refuses a History carrying more operations than it will fold', async () => {

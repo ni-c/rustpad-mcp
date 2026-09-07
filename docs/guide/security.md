@@ -22,8 +22,12 @@ Every tool result that can contain pad-derived text is prefixed with an
 explicit marker telling the model it is data to report on, never instructions
 to follow. That covers `get_document`, `get_document_info` (user names and the
 editor language are chosen by arbitrary clients) and even surviving upstream
-error bodies. Confirmation prompts quote pad ids and character counts only —
-never pad content, which is written by whoever last had the pad open.
+error bodies. Control characters are stripped from all of it — tab, newline and
+carriage return stay — and every string is well-formed after any cut.
+Confirmation prompts quote pad ids, character counts and, for
+`replace_in_document`, the search and replacement strings the caller asked for
+(shortened) — never pad content, which is written by whoever last had the pad
+open.
 
 ## The confirmation, honestly
 
@@ -49,7 +53,9 @@ does not remove the guard, and the server says which of the two happened. See
 
 `RUSTPAD_URL` decides what sits at the other end of the WebSocket, so the
 session layer treats the upstream itself as hostile input: every wait has a
-wall-clock deadline, the message queue, frame size, tracked-user count and
+wall-clock deadline, the message queue (in bytes as well as in messages) and
+the frame size (handed to the WebSocket implementation, so an oversized frame
+fails at its header rather than after it was buffered), tracked-user count and
 inbound document size are capped, History messages are structurally validated,
 and a connection that fails mid-handshake is closed, not leaked.
 

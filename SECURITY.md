@@ -23,8 +23,12 @@ you consider public within their network, and never store secrets in pads.
 Pads are therefore **attacker-controlled text by definition**, including text this
 server wrote earlier, which may have been edited since. Every tool result that can
 contain pad content — reads, document info, even surviving upstream error bodies —
-is prefixed with an explicit untrusted-content marker. Confirmation prompts quote
-pad ids and character counts only, never pad content or user names.
+is prefixed with an explicit untrusted-content marker, and control characters are
+stripped from everything the instance wrote — pad text, user names, the editor
+language, error bodies — with tab, newline and carriage return kept, and every
+string made well-formed after any cut. Confirmation prompts quote pad ids, character
+counts and, for `replace_in_document`, the search and replacement strings the caller
+asked for (shortened and cleaned by the library) — never pad content or user names.
 
 `RUSTPAD_READ_ONLY=true` narrows the server to the three read tools; the write tools
 are not registered at all. It is parsed leniently — `true`, `1` and `yes` all switch
@@ -68,28 +72,34 @@ of what was approved:
   execute against the 40 kB a colleague pasted in the meantime; it fails, and the
   person is asked again with the real numbers.
 - `replace_in_document` binds the pad, the search and replacement strings **in order**,
-  and the number of matches. The order is why this server does not use the shared
-  library's `setResourceKey`, which sorts its targets: `search` and `replace` are drawn
-  from the same vocabulary, so sorted, "DEV → PROD" and "PROD → DEV" are one and the
-  same approval — and on a pad where both occur equally often the count agrees too.
-  Pads are world-writable, so an attacker can arrange precisely that.
+  and the number of matches. The order is why these keys come from the shared library's
+  `orderedResourceKey` and not its `setResourceKey`, which sorts its targets: `search`
+  and `replace` are drawn from the same vocabulary, so sorted, "DEV → PROD" and
+  "PROD → DEV" are one and the same approval — and on a pad where both occur equally
+  often the count agrees too. Pads are world-writable, so an attacker can arrange
+  precisely that.
 
-What the key does **not** prove is freshness. The sealed request state that carries a
-dialog answer back proves the answer belongs to this question and this operation; it
-stays valid for its whole lifetime, so a replayed reply would replay an approval. That
-path is not reachable on this server today, and the reason is mechanical rather than a
-design choice here: the sealed state only crosses the wire on protocol revision
-`2026-07-28`, where the call ends with `input_required` and the client returns with a
-second `tools/call`. On every revision this SDK speaks — `2025-11-25` and older — the
-SDK's legacy shim answers the elicitation server-side inside the _same_ `tools/call`,
-so there is no reply for anybody to hold on to and send again. The other half of the
-guard, the two-call `confirm_token`, is single-use in any case.
+The key proves binding. Freshness is proved separately, and it has to be: on protocol
+revision `2026-07-28`, which this server serves over stdio since 0.3.0, the dialog is
+a _return value_ — the call ends with `input_required`, the sealed request state
+travels through the client, and the client comes back with a second `tools/call`
+carrying the answer. A seal alone would let that reply be presented again for the
+state's whole lifetime. So every sealed state carries a nonce (mcp-approval ≥ 0.8.1),
+and the nonce is spent the first time an answer arrives with it, accepted or declined;
+a second presentation counts as no answer and the person is asked again.
+`test/approval-replay.test.ts` drives the approver this server builds through exactly
+that sequence. The residual is honest and small: the record of spent nonces lives in
+the process, so a restart forgets it — within the state's fifteen-minute lifetime, on
+a server that was restarted in between, the same reply would be honoured once more.
+On `2025-11-25` the SDK answers the dialog server-side inside the same call, and there
+is no state to replay. The other half of the guard, the two-call `confirm_token`, is
+single-use in any case.
 
-Nothing is built for that gap, deliberately: a mechanism guarding a path that cannot be
-taken is a mechanism nobody can test. `test/protocol-era.test.ts` fails the day this
-server can negotiate `2026-07-28`, and on that day the missing piece is a nonce — a
-per-request value carried into the sealed state and retired when the state is opened,
-so a second presentation of the same reply is refused rather than honoured.
+An earlier version of this section said the replay path was unreachable, and a test
+watched a protocol-version constant to say when that changed. The constant was the
+list of _legacy_ revisions, which never carries the modern one; the path had been
+reachable for two releases while the test stayed green. The claim is now tested
+directly, which is the only kind of claim this file should make.
 
 ## Hostile-server hardening
 
@@ -97,8 +107,18 @@ so a second presentation of the same reply is refused rather than honoured.
 layer treats the server itself as untrusted input: every network wait has a
 wall-clock deadline, message queue, frame size, tracked-user count and inbound
 document size are all capped, History messages are structurally validated before
-they are folded in, and a connection that fails mid-handshake is closed rather than
-leaked.
+they are folded in — every frame has to be a JSON object, every operation an integer
+or a string, and a History that starts past the revision this client holds is a gap
+and refused — and a connection that fails mid-handshake is closed rather than leaked.
+
+Two of those caps are worth being exact about, because both were once true only on
+paper. The frame limit (1 MiB) is handed to the WebSocket implementation as its
+payload limit, so a frame header announcing more fails the connection before a byte
+of the payload is buffered; checked only on the assembled message, as it used to be,
+it ran after undici had already held up to 128 MB. And the queue is bounded in bytes
+(8 MiB) as well as in messages: a count of a thousand at the frame limit is a
+gigabyte, measured at 424 MB for four hundred frames, in a process that mcp-hub
+allows 192 MB.
 
 The wall-clock deadline is checked **inside** the loop that folds a History message,
 not only around it. Applying one operation costs O(document length) and

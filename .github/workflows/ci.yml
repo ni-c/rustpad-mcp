@@ -68,6 +68,20 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high
 
+  # Known vulnerabilities in what a pull request *adds*, from the advisory
+  # database, before it is merged. `npm audit` above checks the tree as it is;
+  # this checks the change, and fails on a known vulnerability it introduces.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
   codeql:
     runs-on: ubuntu-latest
     permissions:
@@ -171,11 +185,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # --ignore-scripts, like every other install in this file: the suite
+      # needs a build and a Rustpad, not anybody's install hook.
+      - run: npm ci --ignore-scripts
       # The suite spawns dist/index.js, not src/. Building is not optional.
       - run: npm run build
       - name: Start Rustpad

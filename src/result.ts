@@ -4,6 +4,8 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { RustpadApiError } from './api.js';
+import { codepointLength } from './ot.js';
+import { cleanText } from './text.js';
 
 export function textResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }] };
@@ -96,15 +98,37 @@ export function untrustedResult(data: Record<string, unknown>): CallToolResult {
  * Separate from the JSON budget because a pad over the ceiling is an ordinary
  * answer rather than an error: `get_document` on a large pad should return as
  * much of it as fits, and say how much there was.
+ *
+ * The budget is measured on the text *as serialised*, not on its length: the
+ * text block carries the pad as a JSON string, and a quote or a backslash is
+ * two characters there where the pad has one. Measured on the raw length, a
+ * pad of 200 000 backslashes went out as 400 000 — twice the budget, in the
+ * one channel that is supposed to enforce it. The cut lands on a code unit,
+ * so `toWellFormed` runs after it. Both counts are code points, like every
+ * other character count this server reports.
  */
 export function budgetedText(text: string): {
   text: string;
   truncated?: { shown: number; total: number };
 } {
-  if (text.length <= MAX_RESULT_BYTES) return { text };
+  if (JSON.stringify(text).length <= MAX_RESULT_BYTES) return { text };
+  // The serialised length grows with the prefix, so the longest prefix that
+  // fits is found by bisection: about eighteen serialisations of at most
+  // 200 000 characters.
+  let low = 0;
+  let high = Math.min(text.length, MAX_RESULT_BYTES);
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (JSON.stringify(text.slice(0, middle)).length <= MAX_RESULT_BYTES) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  const shown = text.slice(0, low).toWellFormed();
   return {
-    text: text.slice(0, MAX_RESULT_BYTES),
-    truncated: { shown: MAX_RESULT_BYTES, total: text.length },
+    text: shown,
+    truncated: { shown: codepointLength(shown), total: codepointLength(text) },
   };
 }
 
@@ -116,7 +140,10 @@ const MAX_ERROR_BODY_LENGTH = 2000;
  * truncated.
  */
 export function sanitizeErrorBody(body: string): string {
-  const trimmed = body.trim();
+  // Control characters out first: an error page is the one piece of upstream
+  // text that reaches the model without the untrusted preamble's framing, and
+  // an escape sequence in it is not part of any error.
+  const trimmed = cleanText(body).trim();
   // Anything markup-shaped: a reverse proxy's error page or a WAF block page.
   // The check is deliberately loose — an XML declaration, a leading comment or
   // a doctype followed by a newline are all the same thing here.
@@ -124,7 +151,7 @@ export function sanitizeErrorBody(body: string): string {
     return '(HTML error page omitted)';
   }
   if (trimmed.length > MAX_ERROR_BODY_LENGTH) {
-    return `${trimmed.slice(0, MAX_ERROR_BODY_LENGTH)}… (truncated)`;
+    return `${cleanText(trimmed, MAX_ERROR_BODY_LENGTH)}… (truncated)`;
   }
   return trimmed;
 }

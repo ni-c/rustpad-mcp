@@ -2,12 +2,14 @@ import { Agent, WebSocket as UndiciWebSocket } from 'undici';
 
 import { assertDocumentId } from './api.js';
 import type { Config } from './config.js';
+import { stripTrailingSlashes } from './config.js';
 import {
   applyOperation,
   codepointLength,
   MAX_DOCUMENT_CODEPOINTS,
   type Op,
 } from './ot.js';
+import { cleanText } from './text.js';
 
 /** Name shown to humans who have the pad open while this server edits it. */
 export const CLIENT_NAME = 'rustpad-mcp';
@@ -27,6 +29,25 @@ export interface SessionLimits {
   /** Wall-clock cap on the whole settle phase, chatty server or not. */
   settleDeadlineMs: number;
   maxQueuedMessages: number;
+  /**
+   * UTF-16 units the queue may hold across all buffered messages.
+   *
+   * The count above is not a memory bound: a thousand messages at the frame
+   * limit is a gigabyte, measured at 424 MB for four hundred of them, and
+   * the process this server usually runs in is allowed 192 MB. The frames
+   * arrive between two turns of the event loop — faster than they are
+   * folded whenever the upstream is on a fast link — so the bound has to be
+   * on what is held, not on how many things are held.
+   */
+  maxQueuedBytes: number;
+  /**
+   * Largest single message accepted, enforced *before* it is buffered: the
+   * WebSocket implementation is told this number and fails the connection on
+   * a frame header that announces more, so a hostile upstream cannot make the
+   * process hold a 128 MB message (undici's default) for a check that runs
+   * after the fact. The same number is checked again on the message once it
+   * arrives, for a factory that ignores the option.
+   */
   maxFrameBytes: number;
   /**
    * Operations this client will fold out of a single History message.
@@ -57,6 +78,7 @@ export const DEFAULT_LIMITS: SessionLimits = {
   settleIdleMs: 300,
   settleDeadlineMs: 20_000,
   maxQueuedMessages: 1000,
+  maxQueuedBytes: 8 * 1024 * 1024,
   maxFrameBytes: 1024 * 1024,
   maxHistoryOperations: 50_000,
   maxUsers: 200,
@@ -98,21 +120,35 @@ interface ServerMsg {
   UserCursor?: unknown;
 }
 
-/** Structural check of a History message — the input is upstream-controlled. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Structural check of a History message — the input is upstream-controlled.
+ *
+ * Numbers have to be integers: `1.5` as a retain count slices half a
+ * character, `NaN` and `Infinity` are `typeof "number"` too, and an id that
+ * is not an integer can never be this connection's.
+ */
 function isValidHistory(
   history: unknown
 ): history is { start: number; operations: { id: number; operation: Op[] }[] } {
-  if (typeof history !== 'object' || history === null) return false;
-  const { start, operations } = history as Record<string, unknown>;
+  if (!isRecord(history)) return false;
+  const { start, operations } = history;
   if (!Number.isInteger(start) || (start as number) < 0) return false;
   if (!Array.isArray(operations)) return false;
   return operations.every((entry) => {
-    if (typeof entry !== 'object' || entry === null) return false;
-    const { id, operation } = entry as Record<string, unknown>;
+    if (!isRecord(entry)) return false;
+    const { id, operation } = entry;
     return (
-      typeof id === 'number' &&
+      Number.isInteger(id) &&
       Array.isArray(operation) &&
-      operation.every((op) => typeof op === 'number' || typeof op === 'string')
+      operation.every(
+        (op) =>
+          (typeof op === 'number' && Number.isInteger(op) && op !== 0) ||
+          typeof op === 'string'
+      )
     );
   });
 }
@@ -131,38 +167,67 @@ export interface WebSocketLike {
   close(): void;
 }
 
+export interface WebSocketOptions {
+  insecureTls: boolean;
+  /** Passed to the implementation as its payload limit; see {@link SessionLimits.maxFrameBytes}. */
+  maxFrameBytes: number;
+}
+
 export type WebSocketFactory = (
   url: string,
-  options: { insecureTls: boolean }
+  options: WebSocketOptions
 ) => WebSocketLike;
 
 /**
- * Default factory. The insecure path needs undici's WebSocket because only it
- * accepts a dispatcher; the plain path uses the global implementation so the
- * two stay independently replaceable.
+ * One dispatcher per distinct pair of options, built on first use.
+ *
+ * Both paths go through undici's own `WebSocket` now, not only the insecure
+ * one: the payload limit lives on the dispatcher, and the global
+ * implementation offers no way to set it. A dispatcher is a connection pool,
+ * so it is shared rather than built per call — the pairs are two in practice
+ * (one per TLS setting), the map is here for tests that vary the limit.
  */
+const dispatchers = new Map<string, Agent>();
+
+function dispatcherFor(options: WebSocketOptions): Agent {
+  const key = `${options.insecureTls}:${options.maxFrameBytes}`;
+  let agent = dispatchers.get(key);
+  if (!agent) {
+    agent = new Agent({
+      // Scoped: relaxed certificate validation reaches the configured
+      // connection only, never the process.
+      connect: options.insecureTls ? { rejectUnauthorized: false } : {},
+      // The bound that matters. undici reads the payload length out of the
+      // frame header and fails the connection there, before a byte of the
+      // payload is buffered; its default is 128 MB.
+      webSocket: { maxPayloadSize: options.maxFrameBytes },
+    } as ConstructorParameters<typeof Agent>[0]);
+    dispatchers.set(key, agent);
+  }
+  return agent;
+}
+
+/** Default factory: undici's WebSocket on a dispatcher that carries the limits. */
 export function defaultWebSocketFactory(
   url: string,
-  options: { insecureTls: boolean }
+  options: WebSocketOptions
 ): WebSocketLike {
-  if (options.insecureTls) {
-    return new UndiciWebSocket(url, {
-      dispatcher: new Agent({ connect: { rejectUnauthorized: false } }),
-    }) as unknown as WebSocketLike;
-  }
-  return new WebSocket(url) as unknown as WebSocketLike;
+  return new UndiciWebSocket(url, {
+    dispatcher: dispatcherFor(options),
+  }) as unknown as WebSocketLike;
 }
 
 /** Maps the configured http(s) base URL to the ws(s) socket URL for a pad. */
 export function socketUrl(baseUrl: string, id: string): string {
   const url = new URL(baseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${url.origin}${url.pathname.replace(/\/+$/, '')}/api/socket/${encodeURIComponent(id)}`;
+  return `${url.origin}${stripTrailingSlashes(url.pathname)}/api/socket/${encodeURIComponent(id)}`;
 }
 
 /** Pulls messages out of event-listener callbacks into an awaitable queue. */
 class MessageQueue {
   private readonly queue: string[] = [];
+  private queuedBytes = 0;
   private waiter: ((value: string | null) => void) | undefined;
   private done = false;
   private failure: Error | undefined;
@@ -184,7 +249,10 @@ class MessageQueue {
       resolve(message);
       return;
     }
-    if (this.queue.length >= this.limits.maxQueuedMessages) {
+    if (
+      this.queue.length >= this.limits.maxQueuedMessages ||
+      this.queuedBytes + message.length > this.limits.maxQueuedBytes
+    ) {
       this.end(
         new Error(
           'the Rustpad server sent more data than this client will buffer'
@@ -193,6 +261,7 @@ class MessageQueue {
       return;
     }
     this.queue.push(message);
+    this.queuedBytes += message.length;
   }
 
   end(error?: Error): void {
@@ -212,7 +281,10 @@ class MessageQueue {
    */
   async next(timeoutMs: number): Promise<string | null> {
     const queued = this.queue.shift();
-    if (queued !== undefined) return queued;
+    if (queued !== undefined) {
+      this.queuedBytes -= queued.length;
+      return queued;
+    }
     if (this.done) {
       if (this.failure) throw this.failure;
       throw new Error('the Rustpad server closed the connection');
@@ -275,6 +347,7 @@ export class RustpadSession {
     assertDocumentId(id);
     const socket = factory(socketUrl(config.url, id), {
       insecureTls: config.insecureTls,
+      maxFrameBytes: limits.maxFrameBytes,
     });
     const messages = new MessageQueue(limits);
 
@@ -347,12 +420,20 @@ export class RustpadSession {
    * again until all of them have been applied.
    */
   private handle(raw: string, deadline: number): ServerMsg {
-    let msg: ServerMsg;
+    let parsed: unknown;
     try {
-      msg = JSON.parse(raw) as ServerMsg;
+      parsed = JSON.parse(raw);
     } catch {
       throw new Error('the Rustpad server sent a message that is not JSON');
     }
+    // `null` and `42` are JSON too. Read as an object, `null` answered the
+    // tool call with "Cannot read properties of null (reading 'Identity')".
+    if (!isRecord(parsed)) {
+      throw new Error(
+        'the Rustpad server sent a message that is not a JSON object'
+      );
+    }
+    const msg = parsed as ServerMsg;
     if (msg.Identity !== undefined) {
       if (typeof msg.Identity === 'number') this.identity = msg.Identity;
     } else if (msg.History !== undefined) {
@@ -363,6 +444,18 @@ export class RustpadSession {
       if (operations.length > this.limits.maxHistoryOperations) {
         throw new Error(
           `the Rustpad server sent a History of ${operations.length} operations, more than the ${this.limits.maxHistoryOperations} this client will fold`
+        );
+      }
+      // A History that starts past the revision this client holds is a gap:
+      // operations the server applied that this client never saw. Folding
+      // nothing and calling the pad "seen" would let a write skip the
+      // second-channel check and land beside content the server has and
+      // this client does not. Rustpad replays from zero on connect and
+      // broadcasts contiguously after that, so a gap is not a slow instance;
+      // it is a different server.
+      if (start > this.state.revision) {
+        throw new Error(
+          `the Rustpad server sent a History starting at revision ${start} while this client holds ${this.state.revision} — the pad state cannot be trusted`
         );
       }
       this.state.sawHistory = true;
@@ -400,14 +493,13 @@ export class RustpadSession {
       }
     } else if (msg.Language !== undefined) {
       if (typeof msg.Language === 'string') {
-        this.state.language = msg.Language.slice(0, 100);
+        this.state.language = cleanText(msg.Language, 100);
       }
-    } else if (msg.UserInfo !== undefined) {
-      const { id, info } = msg.UserInfo;
+    } else if (isRecord(msg.UserInfo)) {
+      const { id, info } = msg.UserInfo as { id: unknown; info: unknown };
       if (typeof id === 'number' && id !== this.identity) {
         if (
-          info &&
-          typeof info === 'object' &&
+          isRecord(info) &&
           typeof info.name === 'string' &&
           typeof info.hue === 'number'
         ) {
@@ -416,7 +508,9 @@ export class RustpadSession {
             this.state.users.has(id)
           ) {
             this.state.users.set(id, {
-              name: info.name.slice(0, MAX_USER_NAME_LENGTH),
+              // A name is typed by whoever opened the pad: control
+              // characters out, and a cut that cannot leave half a pair.
+              name: cleanText(info.name, MAX_USER_NAME_LENGTH),
               hue: info.hue,
             });
           }

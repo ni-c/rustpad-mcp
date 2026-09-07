@@ -59,9 +59,11 @@ describe('results', () => {
     const { text, truncated } = budgetedText(
       'x'.repeat(MAX_RESULT_BYTES + 100)
     );
-    expect(text).toHaveLength(MAX_RESULT_BYTES);
+    // Measured as serialised: the two quotes of the JSON string count.
+    expect(text).toHaveLength(MAX_RESULT_BYTES - 2);
+    expect(JSON.stringify(text).length).toBeLessThanOrEqual(MAX_RESULT_BYTES);
     expect(truncated).toEqual({
-      shown: MAX_RESULT_BYTES,
+      shown: MAX_RESULT_BYTES - 2,
       total: MAX_RESULT_BYTES + 100,
     });
   });

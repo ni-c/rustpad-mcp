@@ -21,7 +21,16 @@ export const READ_TOOLS = [
   'get_stats',
 ] as const;
 
-/** Registered unless `RUSTPAD_READ_ONLY` is set. */
+/**
+ * Registered unless `RUSTPAD_READ_ONLY` is set.
+ *
+ * One boundary here is softer than the list makes it look. Rustpad has no
+ * "create": a pad exists under every id the moment somebody connects to it,
+ * so `set_document` and `append_to_document` on a fresh id bring a pad into
+ * existence just as `create_document` does. Denying `create_document` removes
+ * the random id and the emptiness check, not the ability to make a pad; the
+ * README says so where the allowlist is explained.
+ */
 export const WRITE_TOOLS = [
   'append_to_document',
   'create_document',

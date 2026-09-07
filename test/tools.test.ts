@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeRustpad } from './fake-rustpad.js';
 import { callText, connect, mockFetch, tokenOf } from './harness.js';
 import { expectPortableToolSchemas } from 'mcp-integration-harness';
+import { orderedResourceKey, setResourceKey } from 'mcp-approval';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -12,7 +13,7 @@ describe('tool registration', () => {
   it('registers all 8 tools', async () => {
     const client = await connect(new FakeRustpad());
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
+    expect(tools.map((t) => t.name).toSorted()).toEqual([
       'append_to_document',
       'create_document',
       'get_document',
@@ -27,7 +28,7 @@ describe('tool registration', () => {
   it('registers only the read tools in read-only mode', async () => {
     const client = await connect(new FakeRustpad(), { readOnly: true });
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
+    expect(tools.map((t) => t.name).toSorted()).toEqual([
       'get_document',
       'get_document_info',
       'get_stats',
@@ -85,7 +86,7 @@ describe('tool registration', () => {
         return properties?.untrusted !== undefined;
       })
       .map((tool) => tool.name)
-      .sort();
+      .toSorted();
     // The two read tools that report pad content. get_stats is three counters
     // and a timestamp the Rustpad process keeps about itself; the write tools
     // report what this server just did.
@@ -716,8 +717,9 @@ describe('replace_in_document', () => {
   });
 
   it('does not accept a token with search and replace swapped', async () => {
-    // The case a sorted key cannot see, and the reason this server does not use
-    // the library's `setResourceKey` here. `search` and `replace` come from the
+    // The case a sorted key cannot see, and the reason this server keys the
+    // tool with `orderedResourceKey` rather than with `setResourceKey`.
+    // `search` and `replace` come from the
     // same vocabulary, so sorting the targets makes ("DEV" → "PROD") and
     // ("PROD" → "DEV") one and the same approval — and on a pad where both
     // occur equally often the match count agrees as well. The pad is
@@ -745,6 +747,24 @@ describe('replace_in_document', () => {
     expect(swapped.text).toContain('issued for different arguments');
     expect(fake.doc('cfg').text).toBe(
       'host=PROD\nname=PROD\nlog=DEV\ntmp=DEV\n'
+    );
+  });
+
+  it('keys the pair by position, so the swapped pair is a different key', () => {
+    // The property the tool-level test above relies on, checked at the
+    // library boundary: the same parts in the other order must not collapse
+    // into one key, or the swap test would pass for the wrong reason.
+    const parts = ['cfg', 'DEV', 'PROD', '2'];
+    const swapped = ['cfg', 'PROD', 'DEV', '2'];
+    expect(orderedResourceKey('replace_in_document', parts)).not.toBe(
+      orderedResourceKey('replace_in_document', swapped)
+    );
+    expect(orderedResourceKey('replace_in_document', parts)).toBe(
+      orderedResourceKey('replace_in_document', [...parts])
+    );
+    // ...whereas the set key, by design, does not tell them apart.
+    expect(setResourceKey('replace_in_document', parts)).toBe(
+      setResourceKey('replace_in_document', swapped)
     );
   });
 
@@ -810,6 +830,15 @@ describe('replace_in_document', () => {
   });
 });
 
+/** A pad the socket will report as empty for longer than settle waits. */
+function slowPad(content: string): FakeRustpad {
+  const fake = new FakeRustpad();
+  fake.seed('doc', content);
+  fake.historyDelayMs = 600; // DEFAULT_LIMITS.settleIdleMs is 300
+  mockFetch(content);
+  return fake;
+}
+
 describe('a pad whose history arrives after the settle window', () => {
   // The whole point of this block: on the socket, "this pad is empty" and "the
   // history is not here yet" are the same silence, because Rustpad sends no
@@ -818,15 +847,6 @@ describe('a pad whose history arrives after the settle window', () => {
   // a slow instance, a database restore or behind a buffering proxy. The HTTP
   // endpoint is asked as a second opinion, and these tests are what a fake
   // that answers synchronously can never show.
-
-  /** A pad the socket will report as empty for longer than settle waits. */
-  function slowPad(content: string): FakeRustpad {
-    const fake = new FakeRustpad();
-    fake.seed('doc', content);
-    fake.historyDelayMs = 600; // DEFAULT_LIMITS.settleIdleMs is 300
-    mockFetch(content);
-    return fake;
-  }
 
   it('does not let set_document skip the confirmation', async () => {
     const fake = slowPad('the whole quarterly report');

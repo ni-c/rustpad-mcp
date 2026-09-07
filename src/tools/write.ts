@@ -16,10 +16,11 @@ import {
 } from '../schema.js';
 
 import { assertDocumentId, type RustpadApi } from '../api.js';
+import { orderedResourceKey } from 'mcp-approval';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
 import type { Config } from '../config.js';
 import { assertConfirmedEmpty } from '../pad-state.js';
-import { contentFingerprint, tupleResourceKey } from '../resource-key.js';
+import { contentFingerprint } from '../resource-key.js';
 import { run, ToolInputError } from '../result.js';
 import { withSession, type WebSocketFactory } from '../session.js';
 import { EPHEMERAL_NOTE, shareUrl } from './read.js';
@@ -82,7 +83,9 @@ export function registerWriteTools(
         'Creates a pad, optionally with initial content and an editor ' +
         'language, and returns its shareable URL. Without an id a random one ' +
         `is generated. ${EPHEMERAL_NOTE} Anyone who knows the URL can read ` +
-        'and edit the pad.',
+        'and edit the pad. Rustpad has no create operation of its own: a pad ' +
+        'exists under any id as soon as it is written to, and set_document ' +
+        'or append_to_document on a fresh id makes one just the same.',
       inputSchema: z.object({
         id: documentIdParam
           .optional()
@@ -212,13 +215,14 @@ export function registerWriteTools(
                 consequence: 'The previous content cannot be restored.',
                 // Bound to the pad, to the content that is about to be
                 // destroyed, and to the replacement — in that order, so a
-                // swapped pair is a different key. Binding the old content is
-                // what makes the approval expire with the fact it was given
-                // about: up to five minutes pass between the dialog and the
-                // second call, Rustpad has no authentication, and an approval
-                // read out as "(14 characters)" must not still execute against
-                // the 40 kB a colleague pasted in the meantime.
-                resourceKey: tupleResourceKey('set_document', [
+                // swapped pair is a different key (`orderedResourceKey` keeps
+                // the order; `setResourceKey` would sort it away). Binding the
+                // old content is what makes the approval expire with the fact
+                // it was given about: up to five minutes pass between the
+                // dialog and the second call, Rustpad has no authentication,
+                // and an approval read out as "(14 characters)" must not still
+                // execute against the 40 kB a colleague pasted in the meantime.
+                resourceKey: orderedResourceKey('set_document', [
                   id,
                   contentFingerprint(oldText),
                   contentFingerprint(text),
@@ -401,9 +405,13 @@ export function registerWriteTools(
                 // of matches: an approval for two occurrences does not execute
                 // against a pad that has since grown a third, and one for
                 // "DEV → PROD" does not execute "PROD → DEV". The order is why
-                // this is not the library's `setResourceKey` — see
-                // src/resource-key.ts.
-                resourceKey: tupleResourceKey('replace_in_document', [
+                // this is `orderedResourceKey` and not `setResourceKey`:
+                // `search` and `replace` are drawn from the same vocabulary,
+                // and a sorted key would make the two directions one and the
+                // same approval — on a pad where both strings occur equally
+                // often the count matches too, and the pad is world-writable,
+                // so an attacker can arrange that.
+                resourceKey: orderedResourceKey('replace_in_document', [
                   id,
                   search,
                   replace,

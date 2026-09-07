@@ -231,3 +231,46 @@ describe('a malformed operation is refused rather than applied', () => {
     );
   });
 });
+
+/**
+ * The count has to agree with the spread on *malformed* text too.
+ *
+ * A well-formed generator cannot find this: `"\\ud800"` is legal JSON, a
+ * server can send it, `JSON.parse` turns it into a lone surrogate, and the
+ * old count paired every high surrogate with whatever followed it — so
+ * `'\\ud800a'` counted 1 where the spread has 2, and every operation built
+ * from that count was one short of the document it was applied to.
+ */
+describe('code points are counted the same way on malformed text', () => {
+  const unit = fc.constantFrom(
+    String.fromCharCode(0xd800),
+    String.fromCharCode(0xd83d),
+    String.fromCharCode(0xdc00),
+    String.fromCharCode(0xde00),
+    'a',
+    'ä',
+    '😀'
+  );
+  const malformed = fc.string({ unit, maxLength: 20 });
+
+  it('agrees with spreading the string, lone surrogates included', () => {
+    fc.assert(
+      fc.property(malformed, (value) => {
+        expect(codepointLength(value)).toBe([...value].length);
+      }),
+      RUNS
+    );
+  });
+
+  it('builds operations that cover such a document exactly', () => {
+    fc.assert(
+      fc.property(malformed, fc.string({ maxLength: 5 }), (doc, tail) => {
+        fc.pre(tail.length > 0);
+        const ops = appendOps(codepointLength(doc), tail);
+        expect(ops).toBeDefined();
+        expect(applyOperation(doc, ops!)).toBe(doc + tail);
+      }),
+      RUNS
+    );
+  });
+});
