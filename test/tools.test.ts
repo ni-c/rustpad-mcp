@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeRustpad } from './fake-rustpad.js';
 import { callText, connect, mockFetch, tokenOf } from './harness.js';
 import { expectPortableToolSchemas } from 'mcp-integration-harness';
+import { orderedResourceKey, setResourceKey } from 'mcp-approval';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -716,8 +717,9 @@ describe('replace_in_document', () => {
   });
 
   it('does not accept a token with search and replace swapped', async () => {
-    // The case a sorted key cannot see, and the reason this server does not use
-    // the library's `setResourceKey` here. `search` and `replace` come from the
+    // The case a sorted key cannot see, and the reason this server keys the
+    // tool with `orderedResourceKey` rather than with `setResourceKey`.
+    // `search` and `replace` come from the
     // same vocabulary, so sorting the targets makes ("DEV" → "PROD") and
     // ("PROD" → "DEV") one and the same approval — and on a pad where both
     // occur equally often the match count agrees as well. The pad is
@@ -745,6 +747,24 @@ describe('replace_in_document', () => {
     expect(swapped.text).toContain('issued for different arguments');
     expect(fake.doc('cfg').text).toBe(
       'host=PROD\nname=PROD\nlog=DEV\ntmp=DEV\n'
+    );
+  });
+
+  it('keys the pair by position, so the swapped pair is a different key', () => {
+    // The property the tool-level test above relies on, checked at the
+    // library boundary: the same parts in the other order must not collapse
+    // into one key, or the swap test would pass for the wrong reason.
+    const parts = ['cfg', 'DEV', 'PROD', '2'];
+    const swapped = ['cfg', 'PROD', 'DEV', '2'];
+    expect(orderedResourceKey('replace_in_document', parts)).not.toBe(
+      orderedResourceKey('replace_in_document', swapped)
+    );
+    expect(orderedResourceKey('replace_in_document', parts)).toBe(
+      orderedResourceKey('replace_in_document', [...parts])
+    );
+    // ...whereas the set key, by design, does not tell them apart.
+    expect(setResourceKey('replace_in_document', parts)).toBe(
+      setResourceKey('replace_in_document', swapped)
     );
   });
 
