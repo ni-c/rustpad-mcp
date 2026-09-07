@@ -31,17 +31,19 @@ describe('the catalogue', () => {
   // These are what let the filter validate a name before anything is
   // registered. If they drift from the code, every error message drifts too.
   it('is exactly the set of tools the server registers', async () => {
-    expect(await toolNames()).toEqual([...ALL_TOOLS].sort());
+    expect(await toolNames()).toEqual([...ALL_TOOLS].toSorted());
   });
 
   it('splits into read and write with nothing left over', async () => {
-    expect([...READ_TOOLS, ...WRITE_TOOLS].sort()).toEqual(
-      [...ALL_TOOLS].sort()
+    expect([...READ_TOOLS, ...WRITE_TOOLS].toSorted()).toEqual(
+      [...ALL_TOOLS].toSorted()
     );
     expect(
       READ_TOOLS.filter((t) => (WRITE_TOOLS as readonly string[]).includes(t))
     ).toEqual([]);
-    expect(await toolNames({ readOnly: true })).toEqual([...READ_TOOLS].sort());
+    expect(await toolNames({ readOnly: true })).toEqual(
+      [...READ_TOOLS].toSorted()
+    );
   });
 
   it('holds names the env-var syntax cannot misread', () => {
@@ -65,7 +67,7 @@ describe('selecting tools', () => {
   it('narrows tools/list to an allow list', async () => {
     expect(
       await toolNames({ allowTools: 'get_document,get_document_info' })
-    ).toEqual(['get_document', 'get_document_info'].sort());
+    ).toEqual(['get_document', 'get_document_info'].toSorted());
   });
 
   it('removes a whole family with a prefix pattern', async () => {
@@ -87,18 +89,18 @@ describe('selecting tools', () => {
 
   it('selects the curated set for "essential"', async () => {
     expect(await toolNames({ allowTools: 'essential' })).toEqual(
-      [...ESSENTIAL_TOOLS].sort()
+      [...ESSENTIAL_TOOLS].toSorted()
     );
   });
 
   it('lets the preset compose with extra names', async () => {
     expect(await toolNames({ allowTools: 'essential,get_stats' })).toEqual(
-      [...ESSENTIAL_TOOLS, 'get_stats'].sort()
+      [...ESSENTIAL_TOOLS, 'get_stats'].toSorted()
     );
   });
 
   it('leaves an unconfigured server untouched', async () => {
-    expect(await toolNames()).toEqual([...ALL_TOOLS].sort());
+    expect(await toolNames()).toEqual([...ALL_TOOLS].toSorted());
   });
 });
 
@@ -179,7 +181,7 @@ describe('together with read-only mode', () => {
     expect(await toolNames({ ...readOnly, allowTools: 'essential' })).toEqual(
       ESSENTIAL_TOOLS.filter((t) =>
         (READ_TOOLS as readonly string[]).includes(t)
-      ).sort()
+      ).toSorted()
     );
   });
 
@@ -187,7 +189,7 @@ describe('together with read-only mode', () => {
     // Denying something already suppressed is how a defensive list is written.
     expect(
       await toolNames({ ...readOnly, denyTools: 'append_to_document' })
-    ).toEqual([...READ_TOOLS].sort());
+    ).toEqual([...READ_TOOLS].toSorted());
   });
 
   it('lets a pattern cover write tools without failing', async () => {
@@ -199,7 +201,7 @@ describe('together with read-only mode', () => {
     ).toEqual(
       ESSENTIAL_TOOLS.filter((t) =>
         (READ_TOOLS as readonly string[]).includes(t)
-      ).sort()
+      ).toSorted()
     );
     expect(warn.mock.calls.flat().join(' ')).toContain('contributes nothing');
   });
