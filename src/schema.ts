@@ -50,6 +50,9 @@ export const languageParam = z
 export const confirmTokenParam = z
   .string()
   .min(1)
+  // The token is 32 hexadecimal characters; a string with no ceiling is a
+  // string the caller sizes.
+  .max(64)
   .optional()
   .describe(
     'Confirmation token from a previous call of this tool with the same ' +

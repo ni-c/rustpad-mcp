@@ -1,5 +1,7 @@
 import { internalHostKind } from 'mcp-internal-hosts';
 
+import { describeValue } from './text.js';
+
 export interface Config {
   /**
    * Base URL of the Rustpad instance, e.g. `https://rustpad.example.net`.
@@ -65,8 +67,11 @@ export function parseElicitation(raw: string | undefined): boolean {
   const value = raw?.trim().toLowerCase();
   if (value === undefined || value === '' || value === 'true') return true;
   if (value === 'false') return false;
+  // The value is quoted only when it is short and printable: this variable
+  // sits in the same block as everything else an operator pastes, and "got
+  // '<value>'" is how a token pasted into the wrong line reaches the log.
   console.error(
-    `rustpad-mcp: ELICITATION must be "true" or "false" — got "${raw}". ` +
+    `rustpad-mcp: ELICITATION must be "true" or "false" — got ${describeValue(raw)}. ` +
       'Refusing to start rather than guess.'
   );
   process.exit(1);
@@ -117,9 +122,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     process.exit(1);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    console.error(
-      `rustpad-mcp: RUSTPAD_URL must use http:// or https:// (got ${parsed.protocol})`
-    );
+    // Without the scheme: a hexadecimal key with a colon after it is a valid
+    // URL whose scheme is the key, and this line used to print it in full.
+    console.error('rustpad-mcp: RUSTPAD_URL must use http:// or https://');
     process.exit(1);
   }
   // Rustpad has no authentication, so credentials here are always a mistake —
@@ -145,13 +150,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   return {
-    url: url.replace(/\/+$/, ''),
+    // What the parser made of it, not the string as typed: a stray space or
+    // an unencoded character in the path would otherwise be glued in front of
+    // every request path and into every share link. `origin` drops nothing
+    // the checks above did not already refuse.
+    url: `${parsed.origin}${stripTrailingSlashes(parsed.pathname)}`,
     insecureTls,
     readOnly,
     elicitation,
     allowTools,
     denyTools,
   };
+}
+
+/**
+ * A counted loop rather than `/\/+$/`: a suffix pattern that starts with a
+ * repetition is tried from every position of the run, so a path of many
+ * slashes costs its length squared. The URL is the operator's, and the cost is
+ * paid once at startup — but the same helper serves the socket URL on every
+ * call, and the rule is cheaper to keep than to argue about.
+ */
+export function stripTrailingSlashes(path: string): string {
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 0x2f) end--;
+  return path.slice(0, end);
 }
 
 function isLoopbackHost(hostname: string): boolean {

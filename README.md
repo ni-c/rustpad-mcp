@@ -108,6 +108,12 @@ RUSTPAD_ALLOW_TOOLS=get_document,append_to_document
 RUSTPAD_DENY_TOOLS=set_document
 ```
 
+One boundary is softer than the list suggests: Rustpad has no create operation,
+a pad exists under any id the moment it is written to, so denying
+`create_document` does not stop new pads — `set_document` or
+`append_to_document` on a fresh id makes one just the same. Deny the write
+tools you mean, or use `RUSTPAD_READ_ONLY`.
+
 An entry that matches no tool aborts startup and names it, so a typo cannot
 silently hide a tool — an absent tool is not something anyone traces back to an
 environment variable. A filtered tool is never registered, so it is absent from
@@ -256,8 +262,12 @@ treated as untrusted input rather than as something a login vouched for.
   client cannot show one, a single-use token that only ever appears in a
   previous tool result — which proves the call was made twice with the same
   arguments, and nothing more. The fallback text says which of the two it was.
-- Tool results are size-capped; upstream error bodies are sanitized before
-  they reach the model.
+- Tool results are size-capped; control characters are stripped from
+  everything the instance wrote, and upstream error bodies are sanitized
+  before they reach the model.
+- The instance is untrusted too: WebSocket frames are limited at the header,
+  before they are buffered, the message queue is bounded in bytes, and every
+  frame is checked for shape before it is folded into the pad.
 - `RUSTPAD_INSECURE_TLS` relaxes certificate validation only for the
   configured connection, never process-wide.
 

@@ -69,6 +69,12 @@ export async function connect(
     client.connect(clientTransport),
     server.connect(serverTransport),
   ]);
+  // Listed once, so every `callTool` in every suite runs the client-side
+  // check of `structuredContent` against the declared output schema. A
+  // client that has not listed the tools skips that check, and a result the
+  // server considers fine can still be a protocol error to a client that
+  // has.
+  await client.listTools();
   return Object.assign(client, { prompts });
 }
 

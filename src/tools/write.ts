@@ -83,7 +83,9 @@ export function registerWriteTools(
         'Creates a pad, optionally with initial content and an editor ' +
         'language, and returns its shareable URL. Without an id a random one ' +
         `is generated. ${EPHEMERAL_NOTE} Anyone who knows the URL can read ` +
-        'and edit the pad.',
+        'and edit the pad. Rustpad has no create operation of its own: a pad ' +
+        'exists under any id as soon as it is written to, and set_document ' +
+        'or append_to_document on a fresh id makes one just the same.',
       inputSchema: z.object({
         id: documentIdParam
           .optional()

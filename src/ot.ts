@@ -12,19 +12,35 @@ export type Op = number | string;
 
 /**
  * Rustpad rejects any edit whose resulting document exceeds this many
- * characters (`apply_edit` in rustpad-server). Checked here first so the
- * caller gets a readable error instead of a dropped connection.
+ * characters: `apply_edit` in rustpad-server compares
+ * `operation.target_len()` against `256 * 1024`, and `target_len` counts
+ * Unicode scalar values — code points, not bytes and not UTF-16 units. Checked
+ * here first so the caller gets a readable error instead of a dropped
+ * connection. The frame that carries the edit is never the tighter bound: a
+ * 256 KiB insertion is at most 1.5 MB as escaped JSON, and the server's
+ * WebSocket takes messages up to tungstenite's 64 MiB default.
  */
 export const MAX_DOCUMENT_CODEPOINTS = 256 * 1024;
 
-/** The number of Unicode code points in a string. */
+/**
+ * The number of Unicode code points in a string — exactly `[...text].length`,
+ * which is what {@link applyOperation} slices by.
+ *
+ * The two have to agree on malformed input as well as on good: a high
+ * surrogate counts as a pair only when a low surrogate actually follows it.
+ * A lone `\ud800` — legal in JSON, and so something the instance can send —
+ * used to swallow the character after it, and every operation built from
+ * that count was one short of the document it was applied to.
+ */
 export function codepointLength(text: string): number {
   let length = 0;
   for (let i = 0; i < text.length; i++) {
     length++;
-    // Surrogate pair: one code point spans two UTF-16 units.
     const code = text.charCodeAt(i);
-    if (code >= 0xd800 && code <= 0xdbff) i++;
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) i++;
+    }
   }
   return length;
 }

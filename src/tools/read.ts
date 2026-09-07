@@ -9,6 +9,7 @@ import { budgetedText, jsonResult, run, untrustedResult } from '../result.js';
 import { untrustedFields } from '../output-schema.js';
 import { documentIdParam } from '../schema.js';
 import { withSession, type WebSocketFactory } from '../session.js';
+import { cleanText } from '../text.js';
 
 /** Reused across tool descriptions so the caveat is worded identically. */
 export const EPHEMERAL_NOTE =
@@ -58,7 +59,16 @@ export function registerReadTools(
         truncated: z
           .object({ shown: z.number().int(), total: z.number().int() })
           .optional()
-          .describe('Present when the pad is larger than the result budget.'),
+          .describe(
+            'Present when the pad is larger than the result budget. Both ' +
+              'counts are code points.'
+          ),
+        // Sent with the empty answer. It was not in the schema, which is
+        // `additionalProperties: false` once emitted, and a client that had
+        // listed the tools refused the whole result as a protocol error —
+        // on the success path only, which no test had walked with a listing
+        // client until the harness listed once for every suite.
+        note: z.string().optional(),
       }),
     },
     async ({ id }) =>
@@ -74,7 +84,12 @@ export function registerReadTools(
               'expired. Rustpad reports all three the same way.',
           });
         }
-        return untrustedResult({ id, ...budgetedText(text) });
+        // Cleaned, not byte-exact: a pad is the product here, and a search
+        // string copied out of a cleaned view will miss a control character
+        // that is still in the pad — but `replace_in_document` then fails
+        // with a sentence, where a raw ESC sequence in the model's context
+        // fails nobody in particular.
+        return untrustedResult({ id, ...budgetedText(cleanText(text)) });
       })
   );
 
