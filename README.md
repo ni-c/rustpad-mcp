@@ -67,7 +67,7 @@ model sees it.
 
 - A reachable Rustpad instance (self-hosted; the server is stateless and
   needs no credentials — Rustpad has no authentication)
-- Node.js >= 22, or Docker
+- Node.js >= 24, or Docker
 
 ## Configuration
 
