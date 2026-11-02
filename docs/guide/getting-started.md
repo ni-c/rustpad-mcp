@@ -9,7 +9,7 @@
   docker run --rm -dp 127.0.0.1:3030:3030 ekzhang/rustpad
   ```
 
-- Node.js ≥ 22, or Docker.
+- Node.js ≥ 24, or Docker.
 
 No credentials are needed — Rustpad has no authentication.
 

@@ -17,7 +17,7 @@ npm run build
   suite talks to an in-memory fake of rustpad-server (`test/fake-rustpad.ts`,
   including OT transformation of concurrent edits) over the real MCP protocol, and
   `test/session.test.ts` plays a hostile server. CI runs lint, build and tests on
-  Node 22 and 24, plus `npm audit`, CodeQL and a Trivy scan of the container image
+  Node 24 and 26, plus `npm audit`, CodeQL and a Trivy scan of the container image
   on amd64 and arm64.
 - **Comments** explain constraints the code cannot show — not what the next line
   does. Most comments in `src/` document a wire-protocol behaviour of

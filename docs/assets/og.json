@@ -5,5 +5,5 @@
     "An MCP server for Rustpad — collaborative",
     "pads your AI can read and edit alongside you"
   ],
-  "badges": ["8 tools", "OT-precise edits", "MIT", "Node ≥22"]
+  "badges": ["8 tools", "OT-precise edits", "MIT"]
 }
